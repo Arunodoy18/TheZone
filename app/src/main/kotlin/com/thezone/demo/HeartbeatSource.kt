@@ -27,9 +27,11 @@ object HeartbeatSource {
             com.thezone.demo.DebugOverrides.batteryPercentOverride ?: readBatteryPercent(context)
         val batteryLevel = BatteryScale.percentToNibble(batteryPercent)
 
-        // Sensor-derived status with zero user input: a rising barometric trend
-        // is inferred as RISING_WATER (PACKET_SPEC status enum, PRD §6).
-        val status = if (Altitude.rising) Status.RISING_WATER.code else Status.UNKNOWN.code
+        // A user assertion (Citizen buttons) wins; otherwise status is
+        // sensor-derived — a rising barometric trend infers RISING_WATER
+        // (PACKET_SPEC status enum, PRD §6) with zero input.
+        val status = com.thezone.demo.UserStatus.code
+            ?: if (Altitude.rising) Status.RISING_WATER.code else Status.UNKNOWN.code
 
         val packet = Packet(
             version = Packet.PROTOCOL_VERSION,

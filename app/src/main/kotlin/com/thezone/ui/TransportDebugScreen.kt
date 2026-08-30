@@ -56,22 +56,8 @@ import kotlinx.coroutines.delay
 fun TransportDebugScreen() {
     val context = LocalContext.current
 
-    // The controller talks in plain callbacks; bump a counter to recompose.
-    var revision by remember { mutableIntStateOf(0) }
-    DisposableEffect(Unit) {
-        TransportController.onChange = { revision++ }
-        onDispose { TransportController.onChange = null }
-    }
-    // Keep "last heard" ages fresh even when nothing new arrives.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            revision++
-        }
-    }
-
     @Suppress("UNUSED_EXPRESSION")
-    revision // read so recomposition tracks it
+    transportTick() // recompose on transport changes + once a second
 
     val diagnostics = TransportController.diagnostics
     val rows = TransportController.received
@@ -79,7 +65,7 @@ fun TransportDebugScreen() {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { revision++ }
+    ) { }
 
     val missing = missingPermissions(context)
 

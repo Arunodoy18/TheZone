@@ -10,7 +10,9 @@ import com.thezone.core.SilenceEvaluator
 import com.thezone.core.SilenceState
 import com.thezone.core.SilenceTransition
 import com.thezone.core.StoredReport
+import com.thezone.core.TriageEntry
 import com.thezone.demo.HeartbeatSource
+import com.thezone.packet.BatteryScale
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.PacketCodec
 import com.thezone.sensors.PressureReader
@@ -63,6 +65,39 @@ object TransportController {
     val silenceDevices: List<DeviceSilence> get() = silence.snapshot()
     val silenceTransitions: List<SilenceTransition> get() = silence.transitions()
     val cellLosses: List<CellLoss> get() = silence.cellLosses()
+
+    /** How many other devices are currently carrying this phone's signal (heard, not silent). */
+    val peersHeard: Int
+        get() = silence.snapshot().count {
+            it.state == SilenceState.ALIVE || it.state == SilenceState.OVERDUE
+        }
+
+    /** Store + silence, joined into the responder's triage rows — one per device. */
+    fun triageEntries(): List<TriageEntry> {
+        val silenceByDev = silence.snapshot().associateBy { it.deviceIdHex }
+        return store.all()
+            .filterNot { it.isOwn }
+            .groupBy { it.packet.deviceId.toHex() }
+            .map { (_, records) -> records.maxBy { it.lastHeardAtMillis } }
+            .map { r ->
+            val dev = r.packet.deviceId.toHex()
+            val s = silenceByDev[dev]
+            TriageEntry(
+                deviceIdHex = dev,
+                status = r.packet.status,
+                severity = r.packet.severity,
+                casualties = r.packet.casualties,
+                altDelta = r.packet.altDelta,
+                altTrend = r.packet.altTrend,
+                batteryPercent = BatteryScale.nibbleToPercent(r.packet.batteryLevel),
+                hopsFromOrigin = r.hopsFromOrigin,
+                lastHeardAtMillis = r.lastHeardAtMillis,
+                lastRssiDbm = r.lastRssiDbm,
+                silence = s?.state ?: SilenceState.ALIVE,
+                unexpectedSinceMillis = s?.unexpectedSinceMillis,
+            )
+        }
+    }
 
     /** Legacy view kept for the debug list — one row per stored report. */
     val received: List<ReceivedRow>

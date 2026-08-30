@@ -60,6 +60,7 @@ class ReportStore(
                     firstHeardAtMillis = receivedAtMillis,
                     lastHeardAtMillis = receivedAtMillis,
                     bestRssiDbm = rssiDbm,
+                    lastRssiDbm = rssiDbm,
                     receivedHopCount = packet.hopCount,
                     timesHeard = 1,
                     isOwn = isOwn,
@@ -84,6 +85,7 @@ class ReportStore(
                 receivedHopCount = hopForEntry,
                 lastHeardAtMillis = receivedAtMillis,
                 bestRssiDbm = maxOf(existing.bestRssiDbm, rssiDbm),
+                lastRssiDbm = rssiDbm,
                 timesHeard = existing.timesHeard + 1,
                 isOwn = existing.isOwn || isOwn,
             )
@@ -184,7 +186,10 @@ data class StoredReport(
     val packet: Packet,
     val firstHeardAtMillis: Long,
     val lastHeardAtMillis: Long,
+    /** Strongest RSSI ever seen from this record — "closest approach". */
     val bestRssiDbm: Int,
+    /** RSSI of the most recent reception — for the live Dig Here bar. */
+    val lastRssiDbm: Int,
     /** hop_count as it arrived on the wire. */
     val receivedHopCount: Int,
     val timesHeard: Int,

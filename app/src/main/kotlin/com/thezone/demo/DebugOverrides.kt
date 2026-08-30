@@ -17,3 +17,13 @@ object DebugOverrides {
             field = value?.coerceIn(0, 100)
         }
 }
+
+/**
+ * The Citizen screen's three optional buttons (Trapped / Water rising / Safe).
+ * Null = no user assertion; the heartbeat then reports sensor-derived status.
+ */
+object UserStatus {
+    @Volatile
+    var code: Int? = null
+}
+
