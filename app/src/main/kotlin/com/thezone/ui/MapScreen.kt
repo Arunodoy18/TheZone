@@ -1,5 +1,6 @@
 package com.thezone.ui
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -49,19 +54,24 @@ import com.thezone.core.GridCell
 import com.thezone.core.SilenceState
 import com.thezone.transport.TransportController
 import com.thezone.ui.theme.Zone
+import kotlin.math.ln
 
 /**
- * Map / EOC (PRD §3 C). Projector-facing. The one screen where the USP must be
- * visible: a cell where every device went silent at once must NOT look like a
- * cell that never had coverage. Empty is flat and recessive; CELL_LOSS is a
- * bright, hatched, labelled hole with a timestamp. A time scrubber replays the
- * event so you can watch the hole open.
+ * Map / EOC (PRD §3 C). Projector-facing, scanned not read. Surface the summary
+ * before the detail: a glanceable count band and a "send here first" strip sit
+ * above the grid. On the grid, empty is a recessive dot, a confirmed cell is
+ * solid colour, and CELL_LOSS is a bright hatched hole with an expanding ripple
+ * and a timestamp — it must never read like a cell that never had coverage.
  */
 private class CellState(var devices: Int = 0, var severitySum: Int = 0, var silent: Int = 0) {
     var confidence: Double = 1.0
     val avgSeverity: Int get() = if (devices == 0) 0 else severitySum / devices
 }
 
+private const val SEVERE = 11
+private const val MODERATE = 6
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MapScreen() {
     transportTick()
@@ -71,7 +81,6 @@ fun MapScreen() {
     val reports = TransportController.reports
     val scenario = TransportController.simScenario
 
-    // time window for the scrubber
     val tMin = reports.minOfOrNull { it.firstHeardAtMillis } ?: 0L
     val tMax = System.currentTimeMillis()
     var scrub by remember { mutableFloatStateOf(1f) }
@@ -90,7 +99,6 @@ fun MapScreen() {
         st.severitySum += r.packet.severity
         st.confidence = confByCell[cell]?.confidence ?: 1.0
     }
-    // fold silence state in (live only — historical per-device state isn't reconstructed)
     if (live) {
         TransportController.silenceDevices.forEach { d ->
             val cell = d.cell ?: fallbackCell(d.deviceIdHex)
@@ -101,49 +109,81 @@ fun MapScreen() {
         .filter { live || it.firstSilentAtMillis <= tAt }
         .associateBy { it.cell }
 
+    val severe = cells.count { it.value.avgSeverity >= SEVERE }
+    val moderate = cells.count { it.value.avgSeverity in MODERATE until SEVERE }
+    val gaps = coverageGaps(cells.keys, losses.keys)
+    val priorities = priorityList(cells, losses)
+
     val pulse by rememberInfiniteTransition(label = "cl").animateFloat(
         0.30f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "p",
+    )
+    val ripple by rememberInfiniteTransition(label = "rp").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing)), label = "r",
     )
 
     Column(Modifier.fillMaxSize().background(Zone.ink).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("SEVERITY MAP", color = Zone.bone, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("SEVERITY MAP", color = Zone.bone, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             Text(
                 if (live) "LIVE" else "REPLAY ${clock(tAt)}",
                 color = if (live) Zone.signal else Zone.amber,
-                fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+                fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
             )
         }
-        Text(
-            buildString {
-                append("${cells.size} cells · ${losses.size} collapsed")
-                if (scenario != null) append("  ·  toll ${scenario.second}  ·  ${(scenario.first * 100).toInt()}%")
-            },
-            color = Zone.boneDim, fontSize = 14.sp,
-        )
-        if (TransportController.nearDamage) {
+        if (scenario != null) {
             Text(
-                "NETWORK ALERT — nearby nodes pinned to max reach",
+                "Rasuwa replay · toll ${scenario.second} · ${(scenario.first * 100).toInt()}%",
+                color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Stat("COLLAPSED", losses.size, if (losses.isNotEmpty()) Zone.alarm else Zone.boneDim)
+            Stat("SEVERE", severe, if (severe > 0) Zone.amber else Zone.boneDim)
+            Stat("MODERATE", moderate, Zone.boneDim)
+            Stat("NO EYES", gaps, Zone.boneDim)
+        }
+        if (TransportController.nearDamage) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "▲ NETWORK ALERT — nodes near the collapse pinned to max reach",
                 color = Zone.alarm, fontSize = 12.sp, fontWeight = FontWeight.Bold,
             )
         }
-        Spacer(Modifier.height(12.dp))
 
+        Spacer(Modifier.height(12.dp))
         Box(
             Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Zone.inkSoft),
         ) {
-            if (cells.isEmpty()) {
+            if (cells.isEmpty() && losses.isEmpty()) {
                 Text("No signals yet.", color = Zone.boneDim, fontSize = 18.sp, modifier = Modifier.align(Alignment.Center))
             } else {
-                MapGrid(cells, losses, pulse)
+                MapGrid(cells, losses, pulse, ripple)
+                Text(
+                    "N ↑", color = Zone.boneDim, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                )
+            }
+        }
+
+        if (priorities.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text("SEND HERE FIRST", color = Zone.boneDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(end = 16.dp),
+            ) {
+                items(priorities) { p -> PriorityCard(p) }
             }
         }
 
         Spacer(Modifier.height(10.dp))
         Legend()
 
-        // scrubber only once there's a meaningful stretch of history to replay
         if (tMax - tMin > 30_000L) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (live) "replay ‹" else "‹ live", color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
@@ -157,18 +197,93 @@ fun MapScreen() {
                         inactiveTrackColor = Zone.inkLine,
                     ),
                 )
-            }
-            Row(Modifier.fillMaxWidth()) {
-                Text(clock(tMin), color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                Spacer(Modifier.weight(1f))
-                Text("now", color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text(if (live) "now" else clock(tAt), color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             }
         }
     }
 }
 
+// --- summary band -------------------------------------------------------------
+
 @Composable
-private fun MapGrid(cells: Map<GridCell, CellState>, losses: Map<GridCell, CellLoss>, pulse: Float) {
+private fun Stat(label: String, value: Int, color: Color) {
+    Column {
+        Text("$value", color = color, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text(label, color = Zone.boneDim, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+// --- "send here first" -------------------------------------------------------
+
+private data class Priority(
+    val cell: GridCell,
+    val eyebrow: String,
+    val eyebrowColor: Color,
+    val line: String,
+)
+
+private fun priorityList(cells: Map<GridCell, CellState>, losses: Map<GridCell, CellLoss>): List<Priority> {
+    val fromLoss = losses.values
+        .sortedByDescending { it.lastSilentAtMillis }
+        .map {
+            Priority(it.cell, "COLLAPSED", Zone.alarm,
+                "${it.deviceCount} devices dark · ${clock(it.lastSilentAtMillis)}")
+        }
+    val fromActive = cells.entries
+        .filter { it.key !in losses && it.value.avgSeverity >= MODERATE }
+        .sortedByDescending { (it.value.avgSeverity / 15.0) * it.value.confidence * (1 + ln(1.0 + it.value.devices)) }
+        .map { (cell, st) ->
+            val sev = if (st.avgSeverity >= SEVERE) "SEVERE" else "MODERATE"
+            val col = if (st.avgSeverity >= SEVERE) Zone.amber else Zone.shoal
+            Priority(cell, sev, col,
+                "${st.devices} devices · ${(st.confidence * 100).toInt()}% conf")
+        }
+    return (fromLoss + fromActive).take(6)
+}
+
+@Composable
+private fun PriorityCard(p: Priority) {
+    Column(
+        Modifier
+            .width(200.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Zone.inkSoft)
+            .padding(12.dp),
+    ) {
+        Text(p.eyebrow, color = p.eyebrowColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text("cell ${p.cell.latIndex}, ${p.cell.lonIndex}", color = Zone.bone, fontSize = 15.sp,
+            fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+            maxLines = 1)
+        Text(p.line, color = Zone.boneDim, fontSize = 12.sp, maxLines = 1)
+    }
+}
+
+/** Empty cells *enclosed* by coverage (>=3 of 4 neighbours have data) — real holes, not fringe. */
+private fun coverageGaps(cells: Set<GridCell>, losses: Set<GridCell>): Int {
+    val covered = cells + losses
+    if (covered.size < 4) return 0
+    val minLat = covered.minOf { it.latIndex }; val maxLat = covered.maxOf { it.latIndex }
+    val minLon = covered.minOf { it.lonIndex }; val maxLon = covered.maxOf { it.lonIndex }
+    var gaps = 0
+    for (la in minLat..maxLat) for (lo in minLon..maxLon) {
+        val here = GridCell(la, lo)
+        if (here in covered) continue
+        val around = listOf(GridCell(la + 1, lo), GridCell(la - 1, lo), GridCell(la, lo + 1), GridCell(la, lo - 1))
+            .count { it in covered }
+        if (around >= 3) gaps++
+    }
+    return gaps
+}
+
+// --- grid ------------------------------------------------------------------
+
+@Composable
+private fun MapGrid(
+    cells: Map<GridCell, CellState>,
+    losses: Map<GridCell, CellLoss>,
+    pulse: Float,
+    ripple: Float,
+) {
     val keys = cells.keys + losses.keys
     val minLat = keys.minOf { it.latIndex } - 1
     val maxLat = keys.maxOf { it.latIndex } + 1
@@ -191,7 +306,7 @@ private fun MapGrid(cells: Map<GridCell, CellState>, losses: Map<GridCell, CellL
             val loss = losses[cell]
             val st = cells[cell]
             when {
-                loss != null -> drawCellLoss(tl, sz, pulse)
+                loss != null -> drawCellLoss(tl, sz, pulse, ripple)
                 st != null -> drawActiveCell(tl, sz, st)
                 else -> drawEmptyCell(tl, sz)
             }
@@ -202,17 +317,14 @@ private fun MapGrid(cells: Map<GridCell, CellState>, losses: Map<GridCell, CellL
 }
 
 private fun DrawScope.drawEmptyCell(tl: Offset, sz: Size) {
-    drawRoundRect(Zone.ink, tl, sz, CornerRadius(6f))
-    drawRoundRect(Zone.inkLine, tl, sz, CornerRadius(6f), style = Stroke(width = 1f))
+    // recessive: just a faint dot. No fill, no outline — must not compete.
+    drawCircle(Zone.boneFaint.copy(alpha = 0.35f), radius = 1.6f, center = Offset(tl.x + sz.width / 2, tl.y + sz.height / 2))
 }
 
 private fun DrawScope.drawActiveCell(tl: Offset, sz: Size, st: CellState) {
-    // confidence drives opacity — but a cell with data is always clearly visible;
-    // low confidence reads through the dashed outline, not near-invisibility.
     val a = (0.55f + 0.4f * st.confidence.toFloat()).coerceIn(0.55f, 0.95f)
     drawRoundRect(Zone.severity(st.avgSeverity).copy(alpha = a), tl, sz, CornerRadius(6f))
     if (st.confidence < 0.4) {
-        // dashed outline = "unconfirmed"
         var d = 0f
         while (d < sz.width) {
             drawLine(Zone.boneDim, Offset(tl.x + d, tl.y), Offset(tl.x + minOf(d + 6f, sz.width), tl.y), strokeWidth = 1.5f)
@@ -223,7 +335,18 @@ private fun DrawScope.drawActiveCell(tl: Offset, sz: Size, st: CellState) {
     if (st.silent > 0) drawRoundRect(Zone.alarm, tl, Size(sz.width, 5f))
 }
 
-private fun DrawScope.drawCellLoss(tl: Offset, sz: Size, pulse: Float) {
+private fun DrawScope.drawCellLoss(tl: Offset, sz: Size, pulse: Float, ripple: Float) {
+    // expanding ripple from the hole — drawn first so the frame sits on top
+    val cx = tl.x + sz.width / 2
+    val cy = tl.y + sz.height / 2
+    val r0 = maxOf(sz.width, sz.height) / 2f
+    drawCircle(
+        Zone.alarm.copy(alpha = (1f - ripple) * 0.5f),
+        radius = r0 + ripple * r0 * 3f,
+        center = Offset(cx, cy),
+        style = Stroke(width = 2.5f),
+    )
+
     drawRoundRect(Zone.ink, tl, sz, CornerRadius(4f))
     clipRect(tl.x, tl.y, tl.x + sz.width, tl.y + sz.height) {
         var d = -sz.height
@@ -257,18 +380,19 @@ private fun Legend() {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        LegendItem(Zone.inkLine, "no data")
-        LegendItem(Zone.severity(4), "low")
-        LegendItem(Zone.severity(14), "high")
+        LegendItem(Zone.boneFaint, "no eyes")
+        LegendItem(Zone.severity(3), "light")
+        LegendItem(Zone.severity(9), "moderate")
+        LegendItem(Zone.severity(14), "severe")
         LegendItem(Zone.severity(14).copy(alpha = 0.35f), "unconfirmed")
-        LegendItem(Zone.bone, "collapsed")
+        LegendItem(Zone.bone, "confirmed collapse")
     }
 }
 
 @Composable
 private fun LegendItem(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Box(Modifier.size(13.dp).clip(RoundedCornerShape(3.dp)).background(color))
         Spacer(Modifier.size(6.dp))
         Text(label, color = Zone.boneDim, fontSize = 12.sp)
     }
