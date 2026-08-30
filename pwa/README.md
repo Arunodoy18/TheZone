@@ -1,5 +1,7 @@
 # Zone — web front door + EOC viewer
 
+**Live:** <https://neon-monstera-b28c12.netlify.app/>
+
 Deployed as one Netlify site (publish dir = `pwa/`, no build step — `netlify.toml`
 at the repo root pins it). One link covers everything:
 

@@ -15,6 +15,12 @@ problem statements **PS2** (Ground-Zero Communication Blackout) and **PS5**
   range copies it and rebroadcasts it with a hop count; duplicates drop by content
   hash. The signal physically walks out of the zone in a rescuer's pocket.
 
+**Live:**
+[site](https://neon-monstera-b28c12.netlify.app/) ·
+[download the APK](https://neon-monstera-b28c12.netlify.app/zone.apk) ·
+[EOC viewer](https://neon-monstera-b28c12.netlify.app/viewer.html) ·
+[GitHub release](https://github.com/Arunodoy18/TheZone/releases/latest)
+
 ---
 
 ## The USP — the Dead Man's Packet
@@ -38,8 +44,11 @@ to stop transmitting** — reach the phone at 4 % before it goes dark, not after
 
 ## Get the app
 
-**Prebuilt APK:** [`pwa/zone.apk`](pwa/zone.apk) (debug build, ~9 MB, `minSdk 26`).
-Also served from the deployed site at `<site>/zone.apk`.
+**Prebuilt APK** (debug build, ~9 MB, `minSdk 26`):
+
+- <https://neon-monstera-b28c12.netlify.app/zone.apk>
+- <https://github.com/Arunodoy18/TheZone/releases/latest/download/Zone.apk>
+- [`pwa/zone.apk`](pwa/zone.apk) in this repo
 
 ```bash
 adb install -r pwa/zone.apk
