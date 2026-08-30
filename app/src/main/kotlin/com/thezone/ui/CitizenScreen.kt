@@ -89,7 +89,7 @@ fun CitizenScreen() {
         ) {
             Text(
                 "You are being heard",
-                color = if (peers > 0) Zone.signal else Zone.boneDim,
+                color = if (peers > 0) Zone.signal else Zone.bone.copy(alpha = 0.55f),
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 40.sp,
@@ -97,9 +97,9 @@ fun CitizenScreen() {
             )
             Spacer(Modifier.height(24.dp))
             Text(
-                text = if (peers > 0) "$peers" else "–",
-                color = if (peers > 0) Zone.bone else Zone.boneFaint,
-                fontSize = 128.sp,
+                text = "$peers",
+                color = if (peers > 0) Zone.signal else Zone.boneFaint,
+                fontSize = 132.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
             )

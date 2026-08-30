@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,10 +82,15 @@ private fun Root() {
     if (showDebug) {
         Box(Modifier.fillMaxSize()) {
             DebugHost()
-            OutlinedButton(
-                onClick = { showDebug = false },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
-            ) { Text("Close debug") }
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Zone.signal)
+                    .pointerInput(Unit) { detectTapGestures(onTap = { showDebug = false }) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) { Text("Close debug", color = Zone.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
         }
         return
     }
@@ -147,9 +153,7 @@ private fun PermissionGate(content: @Composable () -> Unit) {
                 color = Zone.bone, fontSize = 20.sp, fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(16.dp))
-            Button(onClick = { launcher.launch(transportPermissions().toTypedArray()) }) {
-                Text("Allow")
-            }
+            ZoneButton("Allow", filled = true) { launcher.launch(transportPermissions().toTypedArray()) }
         }
         return
     }
@@ -204,20 +208,51 @@ private fun ModeSwitcher(
             .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) },
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Switch mode", color = Zone.bone, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth(0.74f),
+        ) {
+            Text(
+                "SWITCH MODE",
+                color = Zone.boneDim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                letterSpacing = 0.18.sp,
+            )
+            Spacer(Modifier.height(14.dp))
             AppMode.entries.forEach { m ->
-                Button(
-                    onClick = { onPick(m) },
-                    modifier = Modifier.fillMaxWidth(0.7f).padding(vertical = 4.dp),
-                ) { Text(m.label) }
+                ZoneButton(m.label, filled = true, modifier = Modifier.padding(vertical = 5.dp)) { onPick(m) }
             }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onDebug, modifier = Modifier.fillMaxWidth(0.7f)) {
-                Text("Debug (H0 / H2)")
-            }
+            Spacer(Modifier.height(10.dp))
+            ZoneButton("Debug (H0 / H2)", filled = false) { onDebug() }
         }
+    }
+}
+
+@Composable
+private fun ZoneButton(
+    label: String,
+    filled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (filled) Zone.signal else Zone.inkSoft)
+            .then(
+                if (filled) Modifier
+                else Modifier.border(1.dp, Zone.inkLine, RoundedCornerShape(12.dp)),
+            )
+            .pointerInput(label) { detectTapGestures(onTap = { onClick() }) }
+            .padding(vertical = 15.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (filled) Zone.ink else Zone.bone,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

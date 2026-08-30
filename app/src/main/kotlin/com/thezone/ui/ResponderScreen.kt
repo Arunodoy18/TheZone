@@ -2,6 +2,7 @@ package com.thezone.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -178,29 +179,51 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
         else -> "FAR"
     }
 
-    Box(Modifier.fillMaxSize().background(Zone.paper)) {
-        // the bar
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+    val fillColor = if (fill > 0.55f) Zone.alarm else Zone.amber
+
+    Column(
+        Modifier.fillMaxSize().background(Zone.paper).padding(20.dp),
+    ) {
+        Text("‹ BACK", color = Zone.paperInk, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(onClick = onBack).padding(vertical = 6.dp))
+
+        // readout — always at the top, so the layout is full at any fill level
+        Spacer(Modifier.height(10.dp))
+        Text(word, color = Zone.paperInk, fontSize = 52.sp, fontWeight = FontWeight.Bold)
+        Text("≈ $metres m", color = fillColor, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("$linkText  ·  $rssi dBm  ·  heard ${(heardAgoMs / 1000).coerceAtMost(999)}s ago",
+            color = linkColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text("dev ${deviceIdHex.take(12)}", color = Zone.paperDim, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+
+        Spacer(Modifier.height(16.dp))
+
+        // the channel — a framed track, always visible; fill rises from the bottom
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Zone.paperPanel)
+                .border(2.dp, Zone.paperLine, RoundedCornerShape(18.dp)),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
+                repeat(5) { Box(Modifier.fillMaxWidth().height(1.dp).background(Zone.paperLine)) }
+            }
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(fill)
-                    .background(if (fill > 0.55f) Zone.alarm else Zone.amber),
-            )
+                    .fillMaxHeight(fill.coerceAtLeast(0.014f))
+                    .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp, topStart = 6.dp, topEnd = 6.dp))
+                    .background(fillColor),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Box(Modifier.fillMaxWidth().height(4.dp).background(Zone.paperInk.copy(alpha = 0.4f)))
+            }
         }
-        Column(Modifier.fillMaxSize().padding(20.dp)) {
-            Text("‹ BACK", color = Zone.paperInk, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable(onClick = onBack).padding(vertical = 6.dp))
-            Spacer(Modifier.height(6.dp))
-            Text("dev ${deviceIdHex.take(12)}", color = Zone.paperDim, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
-            Spacer(Modifier.weight(1f))
-            Text(word, color = Zone.paperInk, fontSize = 56.sp, fontWeight = FontWeight.Bold)
-            Text("≈ $metres m", color = Zone.paperInk, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Text("$linkText   ·   $rssi dBm   ·   heard ${(heardAgoMs / 1000).coerceAtMost(999)}s ago",
-                color = linkColor, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text("Walk. The fill rises as you close in.", color = Zone.paperDim, fontSize = 13.sp)
-        }
+        Spacer(Modifier.height(12.dp))
+        Text("Walk toward the signal — the channel fills as you close in.",
+            color = Zone.paperDim, fontSize = 13.sp)
     }
 }
 

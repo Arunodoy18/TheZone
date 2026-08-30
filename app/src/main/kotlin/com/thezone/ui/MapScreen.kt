@@ -10,6 +10,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -141,16 +143,21 @@ fun MapScreen() {
         Spacer(Modifier.height(10.dp))
         Legend()
 
-        if (tMax > tMin) {
-            Slider(
-                value = scrub,
-                onValueChange = { scrub = it },
-                colors = SliderDefaults.colors(
-                    thumbColor = Zone.signal,
-                    activeTrackColor = Zone.signal,
-                    inactiveTrackColor = Zone.inkLine,
-                ),
-            )
+        // scrubber only once there's a meaningful stretch of history to replay
+        if (tMax - tMin > 30_000L) {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (live) "replay ‹" else "‹ live", color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Slider(
+                    value = scrub,
+                    onValueChange = { scrub = it },
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Zone.signal,
+                        activeTrackColor = Zone.boneFaint,
+                        inactiveTrackColor = Zone.inkLine,
+                    ),
+                )
+            }
             Row(Modifier.fillMaxWidth()) {
                 Text(clock(tMin), color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 Spacer(Modifier.weight(1f))
@@ -200,8 +207,9 @@ private fun DrawScope.drawEmptyCell(tl: Offset, sz: Size) {
 }
 
 private fun DrawScope.drawActiveCell(tl: Offset, sz: Size, st: CellState) {
-    // confidence drives opacity — a lone unconfirmed report is a ghost, not an alarm
-    val a = (0.28f + 0.62f * st.confidence.toFloat()).coerceIn(0.28f, 0.9f)
+    // confidence drives opacity — but a cell with data is always clearly visible;
+    // low confidence reads through the dashed outline, not near-invisibility.
+    val a = (0.55f + 0.4f * st.confidence.toFloat()).coerceIn(0.55f, 0.95f)
     drawRoundRect(Zone.severity(st.avgSeverity).copy(alpha = a), tl, sz, CornerRadius(6f))
     if (st.confidence < 0.4) {
         // dashed outline = "unconfirmed"
@@ -242,13 +250,17 @@ private fun DrawScope.label(text: String, sub: String?, tl: Offset, sz: Size, co
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Legend() {
-    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         LegendItem(Zone.inkLine, "no data")
         LegendItem(Zone.severity(4), "low")
         LegendItem(Zone.severity(14), "high")
-        LegendItem(Zone.severity(14).copy(alpha = 0.3f), "unconfirmed")
+        LegendItem(Zone.severity(14).copy(alpha = 0.35f), "unconfirmed")
         LegendItem(Zone.bone, "collapsed")
     }
 }
@@ -256,9 +268,9 @@ private fun Legend() {
 @Composable
 private fun LegendItem(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(16.dp).clip(RoundedCornerShape(3.dp)).background(color))
-        Spacer(Modifier.size(7.dp))
-        Text(label, color = Zone.boneDim, fontSize = 13.sp)
+        Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.size(6.dp))
+        Text(label, color = Zone.boneDim, fontSize = 12.sp)
     }
 }
 
