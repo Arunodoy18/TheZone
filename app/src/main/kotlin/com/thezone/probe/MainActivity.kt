@@ -23,9 +23,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.thezone.ui.TransportDebugScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -44,14 +46,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
- * H0 — Capability probe (see docs/BUILD_PLAN.md).
+ * Debug host for the pre-UI build phases (BUILD_PLAN forbids real UI before H4).
+ * Two screens behind a plain switcher:
  *
- * Single screen. Prints the BLE PHY / advertising capability flags and whether a
- * barometer exists, and shows the *actual* runtime grant state of the four
- * permissions the radio work in H2 will need — not just what the manifest declares.
+ *  - H0 capability probe — PHY flags, barometer, actual permission grant state.
+ *  - H2 transport debug  — advertise / scan, received-packet log, mode picker.
  *
- * Nothing here touches the packet contract or the transport interface. This is a
- * throwaway diagnostic screen that must run on all three demo phones first.
+ * Replaced wholesale by the mode picker + Citizen/Responder/Map in H6.
  */
 class MainActivity : ComponentActivity() {
 
@@ -60,11 +61,37 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    ProbeScreen()
+                    var screen by remember { mutableStateOf(DebugScreen.PROBE) }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            DebugScreen.entries.forEach { target ->
+                                if (screen == target) {
+                                    Button(onClick = {}) { Text(target.label) }
+                                } else {
+                                    OutlinedButton(onClick = { screen = target }) { Text(target.label) }
+                                }
+                            }
+                        }
+                        HorizontalDivider()
+                        when (screen) {
+                            DebugScreen.PROBE -> ProbeScreen()
+                            DebugScreen.TRANSPORT -> TransportDebugScreen()
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+private enum class DebugScreen(val label: String) {
+    PROBE("H0 Probe"),
+    TRANSPORT("H2 Transport"),
 }
 
 /** The four permissions H2 (advertiser + scanner) will require at runtime. */
