@@ -28,8 +28,7 @@ class BleForegroundService : Service() {
         if (TransportController.bleTransport() == null) {
             TransportController.useBle(applicationContext)
         }
-        TransportController.start()
-        TransportController.refreshHeartbeat(applicationContext)
+        TransportController.start(applicationContext)
         return START_STICKY
     }
 

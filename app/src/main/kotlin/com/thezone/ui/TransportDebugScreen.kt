@@ -122,8 +122,7 @@ fun TransportDebugScreen() {
                     if (TransportController.kind == "BLE") {
                         BleForegroundService.start(context)
                     } else {
-                        TransportController.start()
-                        TransportController.refreshHeartbeat(context)
+                        TransportController.start(context)
                     }
                 },
             ) { Text("Start") }
@@ -189,20 +188,26 @@ fun TransportDebugScreen() {
         KeyVal("PHY active", phyLabel(diagnostics.codedPhyActive, diagnostics.oneMPhyActive, diagnostics.legacyFallbackActive))
         KeyVal("sent / received", "${diagnostics.packetsSent} / ${diagnostics.packetsReceived}")
         KeyVal("rx Coded / 1M", "${diagnostics.rxCoded} / ${diagnostics.rxOneM}")
-        KeyVal("peers heard", rows.size.toString())
+        val relayable = rows.count { !it.isOwn }
+        KeyVal("store: reports / relayable", "${rows.size} / $relayable")
         diagnostics.lastError?.let {
             Text("last error: $it", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
 
-        Header("Received (${rows.size})")
+        Header("Store (${rows.size})")
         if (rows.isEmpty()) {
             Text("Nothing yet. On the other phone: Start on the same mode.", fontSize = 12.sp)
         }
         rows.forEach { row ->
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
-            Text(row.summary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             Text(
-                "rssi ${row.lastRssi}dBm · ${row.phy} · x${row.count} · ${ageSeconds(row.lastSeenMillis)}s ago",
+                row.summary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = if (row.isOwn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                "rssi ${row.lastRssi}dBm · x${row.count} · ${ageSeconds(row.lastSeenMillis)}s ago",
                 fontSize = 11.sp,
             )
             Text(row.rawHex, fontFamily = FontFamily.Monospace, fontSize = 10.sp)

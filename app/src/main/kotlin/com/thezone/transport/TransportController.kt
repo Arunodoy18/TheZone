@@ -2,37 +2,69 @@ package com.thezone.transport
 
 import android.content.Context
 import android.util.Log
+import com.thezone.core.AcceptOutcome
+import com.thezone.core.ReportStore
+import com.thezone.core.StoredReport
 import com.thezone.demo.HeartbeatSource
-import com.thezone.packet.Packet
-import com.thezone.packet.PacketCodec
+import com.thezone.identity.DeviceKeyStore
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 /**
- * Single owner of the active [ReportTransport] for the app process, so the debug
- * screen and the foreground service never fight over the radio. Swappable between
- * BLE / Simulated / File at runtime (the mode picker in the deck's "failure
- * drills").
+ * Single owner of the active [ReportTransport] plus the [ReportStore] it feeds, so
+ * the debug screen and the foreground service never fight over the radio.
+ * Swappable between BLE / Simulated / File at runtime.
  *
- * Deliberately coroutine-free and Compose-free: it exposes plain snapshots and a
- * single [onChange] ping. The UI re-reads on the ping.
+ * Runs the relay pump (H3): this device's own heartbeat is advertised
+ * continuously; every few ticks a carried packet is swapped in for one window,
+ * round-robin, so relaying never starves the own signal (PACKET_SPEC rule 5).
+ *
+ * Coroutine-free and Compose-free: plain snapshots + a single [onChange] ping.
  */
 object TransportController {
 
     private val lock = Any()
     private var transport: ReportTransport? = null
-    private val rows = LinkedHashMap<String, ReceivedRow>()
+    private val store = ReportStore()
+
+    private val pump = Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "relay-pump").apply { isDaemon = true }
+    }
+    private var pumpTask: ScheduledFuture<*>? = null
+    private var pumpTick = 0L
+    private var lastAdvertisedHex: String? = null
+    private var appContext: Context? = null
 
     @Volatile
     var diagnostics: TransportDiagnostics = TransportDiagnostics(kind = "none")
         private set
 
-    /** Called (on an arbitrary thread) whenever diagnostics or [received] change. */
+    /** Fired (arbitrary thread) whenever diagnostics, [received] or [reports] change. */
     @Volatile
     var onChange: (() -> Unit)? = null
 
     val kind: String get() = transport?.kind ?: "none"
 
+    /** The content-addressed store, newest activity first. */
+    val reports: List<StoredReport>
+        get() = store.all().sortedByDescending { it.lastHeardAtMillis }
+
+    /** Legacy view kept for the debug list — one row per stored report. */
     val received: List<ReceivedRow>
-        get() = synchronized(lock) { rows.values.sortedByDescending { it.lastSeenMillis } }
+        get() = reports.map { r ->
+            ReceivedRow(
+                contentIdHex = r.contentId,
+                rawHex = r.bytes.toHex(),
+                packet = r.packet,
+                lastRssi = r.bestRssiDbm,
+                phy = PacketPhy.UNKNOWN,
+                lastSeenMillis = r.lastHeardAtMillis,
+                count = r.timesHeard,
+                hopsFromOrigin = r.hopsFromOrigin,
+                isOwn = r.isOwn,
+            )
+        }
 
     fun useSimulated() = swap(SimulatedTransport())
 
@@ -40,39 +72,54 @@ object TransportController {
 
     fun useBle(context: Context) = swap(BleTransport(context))
 
-    fun start() {
+    fun start(context: Context) {
+        appContext = context.applicationContext
+        store.ownDeviceIdHex = runCatching {
+            DeviceKeyStore.identity(context).deviceId.toHex()
+        }.getOrNull()
         transport?.start()
+        startPump()
         ping()
     }
 
     fun stop() {
+        pumpTask?.cancel(false)
+        pumpTask = null
+        lastAdvertisedHex = null
         transport?.stop()
         ping()
     }
 
-    /** Rebuild this device's heartbeat from live state and (re)advertise it. */
+    /** Force this device's own heartbeat on air right now (manual debug button). */
     fun refreshHeartbeat(context: Context) {
+        appContext = context.applicationContext
         val t = transport ?: return
         runCatching { HeartbeatSource.current(context) }
-            .onSuccess { t.advertise(it) }
+            .onSuccess {
+                store.accept(it, rssiDbm = 0)
+                lastAdvertisedHex = it.toHex()
+                t.advertise(it)
+            }
             .onFailure { diagnosticsError("heartbeat build failed: ${it.message}") }
         ping()
     }
 
     fun clearReceived() {
-        synchronized(lock) { rows.clear() }
+        store.clear()
         ping()
     }
 
-    /** BLE-only debug switches; no-ops on other transports. */
     fun bleTransport(): BleTransport? = transport as? BleTransport
 
     private fun swap(next: ReportTransport) {
         synchronized(lock) {
+            pumpTask?.cancel(false)
+            pumpTask = null
+            lastAdvertisedHex = null
             transport?.stop()
             (transport as? SimulatedTransport)?.shutdown()
             (transport as? BleTransport)?.shutdown()
-            rows.clear()
+            store.clear()
             transport = next
         }
         next.onDiagnostics { d ->
@@ -85,34 +132,48 @@ object TransportController {
     }
 
     private fun ingest(inbound: InboundPacket) {
-        val decoded = runCatching { PacketCodec.decode(inbound.bytes) }.getOrNull()
-        val idHex = runCatching { PacketCodec.contentId(inbound.bytes).toHex() }.getOrNull()
-            ?: inbound.bytes.toHex()
-        Log.d(
-            "TheZone",
-            "RX ${inbound.bytes.toHex()} rssi=${inbound.rssi} phy=${inbound.phy} " +
-                "dev=${decoded?.deviceId?.toHex() ?: "??"}",
-        )
-        // Key the debug list by sender so it stays "one row per phone" during the
-        // checkpoint. Real content-addressed dedup is H3's job (keyed on contentId).
-        val rowKey = decoded?.deviceId?.toHex() ?: idHex
-        synchronized(lock) {
-            val existing = rows[rowKey]
-            rows[rowKey] = ReceivedRow(
-                contentIdHex = idHex,
-                rawHex = inbound.bytes.toHex(),
-                packet = decoded,
-                lastRssi = inbound.rssi,
-                phy = inbound.phy,
-                lastSeenMillis = inbound.receivedAtMillis,
-                count = (existing?.count ?: 0) + 1,
+        val outcome = store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
+        if (outcome == AcceptOutcome.NEW || outcome == AcceptOutcome.UPDATED) {
+            val dev = runCatching { com.thezone.packet.PacketCodec.decode(inbound.bytes).deviceId.toHex() }
+                .getOrNull() ?: "??"
+            Log.d(
+                "TheZone",
+                "$outcome ${inbound.bytes.toHex()} rssi=${inbound.rssi} phy=${inbound.phy} dev=$dev",
             )
-            while (rows.size > MAX_ROWS) {
-                val oldest = rows.entries.minByOrNull { it.value.lastSeenMillis } ?: break
-                rows.remove(oldest.key)
-            }
         }
         ping()
+    }
+
+    private fun startPump() {
+        pumpTask?.cancel(false)
+        pumpTick = 0
+        pumpTask = pump.scheduleAtFixedRate(
+            ::pumpOnce, PUMP_PERIOD_MS, PUMP_PERIOD_MS, TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private fun pumpOnce() {
+        val t = transport ?: return
+        val ctx = appContext ?: return
+        try {
+            pumpTick++
+            val carried =
+                if (pumpTick % RELAY_EVERY_N_TICKS == 0L) store.relayBatch(1) else emptyList()
+            val bytes = carried.firstOrNull() ?: runCatching { HeartbeatSource.current(ctx) }
+                .onSuccess { store.accept(it, rssiDbm = 0) }
+                .getOrNull()
+            if (bytes != null) advertiseIfChanged(t, bytes)
+        } catch (e: Throwable) {
+            diagnosticsError("relay pump: ${e.message}")
+        }
+        ping()
+    }
+
+    private fun advertiseIfChanged(t: ReportTransport, bytes: ByteArray) {
+        val hex = bytes.toHex()
+        if (hex == lastAdvertisedHex) return
+        lastAdvertisedHex = hex
+        t.advertise(bytes)
     }
 
     private fun diagnosticsError(message: String) {
@@ -121,23 +182,30 @@ object TransportController {
 
     private fun ping() = onChange?.invoke()
 
-    private const val MAX_ROWS = 50
+    private const val PUMP_PERIOD_MS = 2_000L
+
+    /** 1 tick in N airs a carried packet instead of the own heartbeat. */
+    private const val RELAY_EVERY_N_TICKS = 3L
 }
 
-/** One distinct packet identity heard by this device, for the debug list. */
+/** One stored report, flattened for the debug list. */
 data class ReceivedRow(
     val contentIdHex: String,
     val rawHex: String,
-    val packet: Packet?,
+    val packet: com.thezone.packet.Packet?,
     val lastRssi: Int,
     val phy: PacketPhy,
     val lastSeenMillis: Long,
     val count: Int,
+    val hopsFromOrigin: Int = 0,
+    val isOwn: Boolean = false,
 ) {
     val deviceIdHex: String get() = packet?.deviceId?.toHex() ?: "??"
     val summary: String
         get() = packet?.let {
-            "dev ${deviceIdHex}  st=${it.status}  sev=${it.severity}  bat=${it.batteryLevel}/15  " +
-                "hop=${it.hopCount}  next=${it.nextExpectedTxSeconds}s  alt=${if (it.hasBarometer()) it.altDelta else "n/a"}"
+            val who = if (isOwn) "you" else "dev $deviceIdHex"
+            "$who  hops=$hopsFromOrigin  st=${it.status}  sev=${it.severity}  " +
+                "bat=${it.batteryLevel}/15  next=${it.nextExpectedTxSeconds}s  " +
+                "alt=${if (it.hasBarometer()) it.altDelta else "n/a"}"
         } ?: "undecodable ($rawHex)"
 }

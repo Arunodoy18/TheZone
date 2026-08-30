@@ -112,10 +112,20 @@ class SimulatedTransport(
     ) {
         private var batteryLevel = startBatteryLevel.coerceIn(0, 15)
         private var altDelta = 0
+        private var epochMinute = 0
 
+        /**
+         * A real device re-broadcasts the *same* heartbeat until something
+         * changes, so the store dedups it. Mirror that: hold the packet steady
+         * and only mint a genuinely new identity when battery drains or altitude
+         * shifts (every ~10 ticks).
+         */
         fun nextPacket(tick: Long): ByteArray {
-            if (tick % 20 == 0L && batteryLevel > 0) batteryLevel--
-            altDelta = (altDelta + rng.nextInt(-1, 2)).coerceIn(-20, 20)
+            if (tick % 10 == 0L) {
+                if (batteryLevel > 0 && tick % 40 == 0L) batteryLevel--
+                altDelta = (altDelta + rng.nextInt(-1, 2)).coerceIn(-20, 20)
+                epochMinute = (epochMinute + 1) % 65_536
+            }
 
             val packet = Packet(
                 version = Packet.PROTOCOL_VERSION,
@@ -126,7 +136,7 @@ class SimulatedTransport(
                 status = status,
                 severity = 4 + (identity.deviceId[2].toInt() and 0x07),
                 casualties = identity.deviceId[3].toInt() and 0x03,
-                timestampMinutes = (tick % 65_536).toInt(),
+                timestampMinutes = epochMinute,
                 batteryLevel = batteryLevel,
                 hopCount = 0,
                 nextExpectedTxSeconds = ladder(batteryLevel),
