@@ -1,39 +1,33 @@
-# Zone — EOC viewer (PWA)
+# Zone — web front door + EOC viewer
 
-A read-only window onto a snapshot a responder carried out. The web can act as a
-Bluetooth *central* only — no advertising, no relay, no background — so this is
-not a field role; Citizen and Responder run the native app.
+Deployed as one Netlify site (publish dir = `pwa/`, no build step — `netlify.toml`
+at the repo root pins it). One link covers everything:
 
-Two builds of the same viewer:
-
-| File | Use |
+| Path | What |
 |---|---|
-| `eoc.html` | zero-dependency, works from `file://`. Double-click, drop the JSON. |
-| `index.html` | design pass (IBM Plex, sonar console layout). Needs a network font; site root; also a Claude Artifact: **https://claude.ai/code/artifact/3ad51630-bccd-4cb1-8211-c18b7e9df289** |
+| `/` | landing page — what it is, the pain points, the USP, limitations, and the two buttons |
+| `/zone.apk` | the Android app. Tap to install (allow "install from this source" once). Refresh it with `scripts/release.sh` then commit. |
+| `/viewer.html` | the EOC severity-map + triage viewer. Read-only — the web can be a Bluetooth central only, so it can't join the mesh. Opens with a demo snapshot; drop a `thezone-eoc.json` export to load field data. |
+| `/eoc.html` | zero-dependency build of the viewer (works from `file://`) |
 
-Both render the same thing from the same JSON.
+## Getting a snapshot into the viewer
 
-## Getting a snapshot
-
-On any phone running the app: long-press → Debug → H2 → **Export EOC**.
-It writes `thezone-eoc.json` to the app's external files dir; the path is logged
-(`adb logcat -s TheZone` → "EOC export -> …"). Pull it:
+In the app: long-press → Debug → H2 → **Export EOC** → writes
+`thezone-eoc.json` to the app's external files dir (path logged under tag
+`TheZone`). Pull it:
 
 ```
 adb pull /sdcard/Android/data/com.thezone.probe.debug/files/thezone-eoc.json
 ```
 
-Then drop it on the viewer. `sample-eoc.json` here lets you try it without a device
-(both viewers also open showing a built-in demo snapshot).
+Then drop it on `/viewer.html`. `sample-eoc.json` here lets you try it without a device.
 
-## Deploying your own copy
+## Deploy
 
-- **GitHub Pages** — push the repo, Settings → Pages → deploy from `main`,
-  branch root; the viewer is then at
-  `https://arunodoy18.github.io/TheZone/pwa/eoc.html`.
-- **Netlify Drop** — drag the `pwa/` folder onto https://app.netlify.com/drop.
+Netlify → import `Arunodoy18/TheZone` → build command empty, publish dir `pwa`
+(auto-filled from `netlify.toml`). Every push to `main` redeploys.
 
-## Schema (v2)
+## Snapshot schema (v2)
 
 ```
 { v, generatedAt,
@@ -42,6 +36,3 @@ Then drop it on the viewer. `sample-eoc.json` here lets you try it without a dev
   cellLosses:[{cell:{lat,lon}, deviceCount, silentCount, firstSilent, lastSilent}],
   confidence:[{cell:{lat,lon}, severity, confidence, devices, pathDiversity, verified}] }
 ```
-
-`status`: 0 unknown · 1 safe · 2 trapped · 3 rising water · 4 injured · 5 has supplies · 6 responder
-`silence`: ALIVE · OVERDUE · EXPECTED_SILENCE · UNEXPECTED_SILENCE · `altDelta` −128 = no barometer

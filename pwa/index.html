@@ -1,350 +1,184 @@
-<title>Zone EOC Viewer</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zone — offline disaster mesh</title>
+<meta name="description" content="A phone network that keeps working when every tower is down. Phones relay a 31-byte distress signal hand to hand, out of the zone.">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
-  /* Single visual world: an EOC sonar / bathymetric console. Committed dark,
-     every colour painted explicitly so it holds on any host ground. */
   :root{
     color-scheme: dark;
-    --ink:#070a0d;          /* ground */
-    --ink-soft:#10161c;     /* panel */
-    --ink-raise:#161e26;    /* raised row */
-    --ink-line:#223038;     /* hairline / contour */
-    --bone:#ede8da;         /* primary text — warm, chosen against cold ink */
-    --bone-dim:#7c8792;     /* secondary — cool grey, biased to ink */
-    --bone-faint:#49555f;   /* tertiary */
-    --signal:#1be7c4;       /* the one accent: live contact */
-    /* semantic severity ramp — NOT the accent */
-    --calm:#1f6e7b; --shoal:#3fa7a0; --amber:#f2a93b; --alarm:#ef5b32; --alarm-deep:#b5311b;
+    --ink:#070a0d; --ink-soft:#10161c; --ink-raise:#161e26; --ink-line:#223038;
+    --bone:#ede8da; --bone-dim:#7c8792; --bone-faint:#49555f;
+    --signal:#1be7c4;
+    --calm:#2e7d8a; --amber:#f2a93b; --alarm:#ef5b32;
     --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
-  body{
-    background:var(--ink); color:var(--bone);
-    font:15px/1.5 var(--sans);
-    -webkit-font-smoothing:antialiased;
+  body{background:var(--ink);color:var(--bone);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 64px}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.24em;color:var(--bone-dim);text-transform:uppercase}
+  h1{font:700 40px/1.1 var(--sans);letter-spacing:-.01em;margin:14px 0 0;text-wrap:balance}
+  h1 b{color:var(--signal)}
+  .lead{font-size:19px;color:var(--bone);margin:16px 0 0;max-width:60ch}
+  .oneline{font-size:15px;color:var(--bone-dim);margin:10px 0 0;max-width:64ch}
+
+  .cta{display:flex;gap:12px;flex-wrap:wrap;margin:28px 0 6px}
+  .btn{
+    display:inline-flex;align-items:center;gap:9px;
+    font:700 15px/1 var(--sans);padding:15px 20px;border-radius:11px;cursor:pointer;
+    border:1px solid transparent;
   }
-  .wrap{max-width:1240px;margin:0 auto;padding:22px 22px 40px}
+  .btn.primary{background:var(--signal);color:var(--ink)}
+  .btn.ghost{background:var(--ink-soft);color:var(--bone);border-color:var(--ink-line)}
+  .btn.disabled{background:var(--ink-soft);color:var(--bone-faint);border-color:var(--ink-line);cursor:default}
+  .btn small{font:500 12px/1 var(--mono);opacity:.8}
+  .note{font:500 13px/1.5 var(--mono);color:var(--bone-faint);margin-top:10px}
 
-  header{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid var(--ink-line)}
-  .mark{font:700 22px/1 var(--sans);letter-spacing:.14em}
-  .mark b{color:var(--signal);font-weight:700}
-  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.22em;color:var(--bone-dim);text-transform:uppercase;padding-bottom:3px}
-  .gen{margin-left:auto;font:500 12px/1 var(--mono);color:var(--bone-faint);letter-spacing:.04em}
+  section{margin-top:52px}
+  h2{font:700 13px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--bone-dim);margin:0 0 16px}
+  .modes{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:620px){.modes{grid-template-columns:repeat(3,1fr)}}
+  .mode{background:var(--ink-soft);border:1px solid var(--ink-line);border-radius:12px;padding:15px}
+  .mode h3{font:700 15px/1 var(--sans);margin:0 0 6px;color:var(--signal)}
+  .mode p{font-size:13px;color:var(--bone-dim);margin:0}
 
-  /* status strip — the summary, before any detail */
-  .status{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline;padding:16px 2px}
-  .stat{display:flex;flex-direction:column;gap:3px}
-  .stat .k{font:600 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--bone-dim)}
-  .stat .v{font:600 24px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--bone)}
-  .stat .v.hot{color:var(--alarm)}
-  .alertline{width:100%;margin-top:2px;font:700 12px/1.3 var(--sans);letter-spacing:.03em;color:var(--alarm)}
-  .alertline::before{content:"▲ ";}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--ink-line);vertical-align:top}
+  th{font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--bone-dim)}
+  td:first-child{color:var(--bone-dim);width:44%}
+  td b{color:var(--bone);font-weight:600}
 
-  main{display:grid;grid-template-columns:1fr 380px;gap:18px;margin-top:6px}
-  @media (max-width:900px){ main{grid-template-columns:1fr} }
+  .usp{background:var(--ink-raise);border-left:3px solid var(--signal);border-radius:0 12px 12px 0;padding:18px 20px}
+  .usp p{margin:0}
+  .usp p+p{margin-top:12px;color:var(--bone-dim);font-size:14px}
+  .usp .k{color:var(--signal);font-weight:700}
 
-  .panel{background:var(--ink-soft);border:1px solid var(--ink-line);border-radius:14px;padding:14px}
-  canvas{width:100%;height:auto;display:block;border-radius:8px}
+  ul.lim{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  ul.lim li{font-size:14px;color:var(--bone-dim)}
+  ul.lim b{color:var(--bone);font-weight:600}
 
-  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font:500 12px/1 var(--sans);color:var(--bone-dim)}
-  .legend span{display:inline-flex;align-items:center;gap:7px}
-  .sw{width:14px;height:14px;border-radius:3px;flex:none}
-  .sw.loss{background:var(--bone);position:relative;overflow:hidden}
-  .sw.loss::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(-45deg,transparent 0 3px,var(--alarm) 3px 5px)}
-
-  /* drop / load */
-  .drop{
-    margin:14px 0 0;border:1px dashed var(--ink-line);border-radius:12px;
-    padding:22px;text-align:center;color:var(--bone-dim);cursor:pointer;
-    font:500 14px/1.5 var(--sans);transition:border-color .15s,color .15s;
-  }
-  .drop:hover,.drop:focus-visible,.drop.hot{border-color:var(--signal);color:var(--bone);outline:none}
-  .drop code{font:500 13px var(--mono);color:var(--signal)}
-  .drop.small{padding:10px 14px;font-size:12px;display:inline-block;margin:0}
-
-  /* triage */
-  .triage-h{font:600 11px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--bone-dim);padding:2px 2px 12px}
-  ol.triage{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-  ol.triage li{
-    background:var(--ink-raise);border-radius:10px;overflow:hidden;
-    display:grid;grid-template-columns:40px 1fr auto;align-items:stretch;
-  }
-  .rank{
-    display:flex;align-items:center;justify-content:center;
-    font:700 17px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);
-  }
-  .body{padding:9px 4px 9px 11px;min-width:0}
-  .st{font:700 15px/1.2 var(--sans);letter-spacing:.01em}
-  .meta{font:500 12px/1.4 var(--mono);font-variant-numeric:tabular-nums;color:var(--bone-dim);margin-top:2px}
-  .why{font:600 10px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--signal);margin-top:4px}
-  .pill{align-self:center;margin:0 10px;font:700 11px/1 var(--mono);letter-spacing:.06em;padding:6px 9px;border-radius:6px;white-space:nowrap}
-  .empty{color:var(--bone-faint);font:500 14px/1.5 var(--sans);padding:8px 2px}
-
-  footer{margin-top:26px;padding-top:14px;border-top:1px solid var(--ink-line);font:500 12px/1.5 var(--sans);color:var(--bone-faint)}
-
-  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--ink-line);font:500 13px/1.6 var(--mono);color:var(--bone-faint)}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-
+</head>
+<body>
 <div class="wrap">
-  <header>
-    <div>
-      <div class="eyebrow">Emergency Operations</div>
-      <div class="mark"><b>ZONE</b> EOC VIEWER</div>
-    </div>
-    <div class="gen" id="gen">no snapshot loaded</div>
-  </header>
 
-  <div class="status" id="status" hidden>
-    <div class="stat"><span class="k">cells</span><span class="v" id="s-cells">0</span></div>
-    <div class="stat"><span class="k">collapsed</span><span class="v" id="s-loss">0</span></div>
-    <div class="stat"><span class="k">reports</span><span class="v" id="s-reports">0</span></div>
-    <div class="stat"><span class="k">silent now</span><span class="v" id="s-silent">0</span></div>
-    <div class="alertline" id="alertline" hidden>Network alert — a cell has gone fully dark; nearby nodes pin to max reach</div>
+  <div class="eyebrow">Ground-Zero Communication Blackout · Post-Disaster Information Fog</div>
+  <h1><b>Zone</b> — a phone network that survives when everything else is gone</h1>
+  <p class="lead">
+    Towers down, no signal, no internet. Phones talk straight to each other over Bluetooth.
+    A trapped person's phone broadcasts a 31-byte distress packet; any phone in range copies it and
+    carries it. The signal walks out of the disaster zone in someone's pocket.
+  </p>
+  <p class="oneline">
+    Collection with no network. Fusion with no ground truth. Same broken wire, two ends.
+  </p>
+
+  <div class="cta">
+    <a class="btn primary" id="get" href="/zone.apk" download>
+      Get the app <small>Android · ~8&nbsp;MB</small>
+    </a>
+    <a class="btn ghost" href="/viewer.html">
+      Open the EOC viewer <small>runs in the browser</small>
+    </a>
   </div>
+  <p class="note" id="installnote">
+    Android: tap the file, allow “install from this source” once. &nbsp;·&nbsp;
+    The viewer needs no install — it opens with a demo snapshot.
+  </p>
 
-  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Load an EOC JSON snapshot">
-    Drop a <code>thezone-eoc.json</code> here, or press to pick a file. Everything runs in your browser — nothing is uploaded.
-  </div>
-  <input type="file" id="file" accept="application/json,.json" hidden>
-
-  <main id="board" hidden>
-    <section class="panel">
-      <canvas id="map" width="900" height="640" aria-label="Severity grid"></canvas>
-      <div class="legend">
-        <span><i class="sw" style="background:var(--ink-line)"></i>no data</span>
-        <span><i class="sw" style="background:var(--shoal)"></i>low severity</span>
-        <span><i class="sw" style="background:var(--alarm)"></i>high severity</span>
-        <span><i class="sw" style="background:color-mix(in srgb,var(--alarm) 30%,transparent)"></i>unconfirmed</span>
-        <span><i class="sw loss"></i>cell loss</span>
+  <section>
+    <h2>One app, three roles</h2>
+    <div class="modes">
+      <div class="mode">
+        <h3>Citizen</h3>
+        <p>The trapped or stranded person. No menus, no login — it broadcasts even if the phone is
+        buried or they're unconscious. Shows one line: “3 devices are carrying your signal.”</p>
       </div>
-    </section>
-    <aside class="panel">
-      <div class="triage-h">Triage — most urgent first</div>
-      <ol class="triage" id="triage"></ol>
-    </aside>
-  </main>
+      <div class="mode">
+        <h3>Responder</h3>
+        <p>The rescuer at the edge. A triage-ranked list of who's been heard, and a Dig&nbsp;Here
+        proximity bar — closer to a metal detector than a map.</p>
+      </div>
+      <div class="mode">
+        <h3>Map / EOC</h3>
+        <p>The control room. A severity grid showing which areas are hit how hard — and which ones
+        went completely dark, with the minute it happened.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it answers</h2>
+    <table>
+      <tr><th>Without it</th><th>With it</th></tr>
+      <tr><td>Trapped people can't call for help — no signal</td><td><b>Their phone reports itself, hands-free</b></td></tr>
+      <tr><td>Rescuers have no idea where survivors are</td><td>A live list builds at the perimeter</td></tr>
+      <tr><td>Can't tell someone drowning on a roof from someone crushed in a basement</td><td>Barometer says which — ±1–2&nbsp;m, works where GPS is dead</td></tr>
+      <tr><td>Reports are fragmented and contradictory</td><td>Confidence scoring — a lone panicking phone is a ghost, three that agree are a signal</td></tr>
+      <tr><td><b>Can't tell a flattened village from a merely flooded one</b></td><td><b>CELL_LOSS — a cluster all going silent together means the area was destroyed, at a known minute</b></td></tr>
+      <tr><td>Phones die in hours</td><td>Battery-adaptive — days of honest heartbeats, not hours</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Why nobody else has this</h2>
+    <div class="usp">
+      <p><span class="k">Silence is the signal.</span> Every packet declares when the device will next
+      transmit. So when a device goes quiet, the system knows whether that silence was expected —
+      a dying battery — or not. A phone at 70% that promised to speak in ten seconds and vanished at
+      three: something happened to it, and we know within one interval when.</p>
+      <p>Bridgefy, Briar, goTenna are messaging apps. Chat has no concept of an expected next
+      message, so silence there means nothing. This works because it's structured telemetry, not
+      messaging — the differentiator and the architecture are the same decision.</p>
+    </div>
+  </section>
+
+  <section id="limits">
+    <h2>Known limitations — stated, not hidden</h2>
+    <ul class="lim">
+      <li><b>iOS can't participate.</b> Apple restricts BLE advertising; Web Bluetooth gives browsers
+      the central role only. A real deployment needs an entitlement or a hardware beacon. Android only.</li>
+      <li><b>2.4&nbsp;GHz penetrates rubble badly.</b> The answer isn't magic penetration — a pinned
+      phone advertises for days at low duty cycle, and a rescuer walking the pile eventually gets
+      within ~10&nbsp;m. We turn “search this block” into “search this circle.”</li>
+      <li><b>Coded-PHY support is chipset-dependent.</b> It doesn't track price or release year, so the
+      radio runs dual-mode and falls back to 1M where extended advertising is missing.</li>
+      <li><b>The last mile is out of scope.</b> The responder's phone is the gateway. Even if it never
+      syncs, “47 signals in this building, 3 marked rising-water” is already the whole product.</li>
+    </ul>
+  </section>
 
   <footer>
-    Read-only. Field roles (Citizen, Responder) run the native app — a browser can act
-    as a Bluetooth central only, so it can't advertise, relay, or run in the background.
-    This is the EOC's window onto a snapshot a responder carried out.
+    Source: <a href="https://github.com/Arunodoy18/TheZone">github.com/Arunodoy18/TheZone</a><br>
+    The EOC viewer is read-only — a browser can be a Bluetooth central only, so field roles run native.
   </footer>
 </div>
 
 <script>
-const STATUS = {0:"UNKNOWN",1:"SAFE",2:"TRAPPED",3:"RISING WATER",4:"INJURED",5:"HAS SUPPLIES",6:"RESPONDER"};
-const NO_BARO = -128;
-const reduced = matchMedia("(prefers-reduced-motion:reduce)").matches;
-
-const $ = id => document.getElementById(id);
-const pad2 = n => String(n).padStart(2,"0");
-const hhmm = ms => { const d = new Date(ms); return pad2(d.getHours())+":"+pad2(d.getMinutes()); };
-
-/* severity 0..1 -> calm → shoal → amber → alarm */
-function sev(t){
-  const L = (a,b,k)=>a.map((v,i)=>Math.round(v+(b[i]-v)*k));
-  const calm=[31,110,123], shoal=[63,167,160], amber=[242,169,59], alarm=[239,91,50];
-  const c = t<.34 ? L(calm,shoal,t/.34) : t<.67 ? L(shoal,amber,(t-.34)/.33) : L(amber,alarm,(t-.67)/.33);
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
-}
-const alpha = (rgb,a) => { const m = rgb.match(/\d+/g); return `rgba(${m[0]},${m[1]},${m[2]},${a})`; };
-
-let SNAPSHOT = null;
-let pulse = 0;
-
-function ingest(data){
-  SNAPSHOT = data;
-  $("status").hidden = false;
-  $("board").hidden = false;
-  $("drop").classList.add("small");
-  $("drop").innerHTML = "Load a different snapshot";
-
-  const reports = data.reports || [], losses = data.cellLosses || [];
-  const cells = new Map();
-  for(const r of reports){
-    const k = r.cell.lat+","+r.cell.lon;
-    const c = cells.get(k) || {lat:r.cell.lat,lon:r.cell.lon,n:0,sevSum:0};
-    c.n++; c.sevSum += r.severity; cells.set(k,c);
+  // iOS can't run the mesh — swap the download CTA
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.platform || "") ||
+    (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+  if (isIOS) {
+    var b = document.getElementById("get");
+    b.className = "btn disabled";
+    b.removeAttribute("href");
+    b.removeAttribute("download");
+    b.innerHTML = 'iOS can’t join the mesh →';
+    b.style.cursor = "pointer";
+    b.onclick = function(){ document.getElementById("limits").scrollIntoView({behavior:"smooth"}); };
+    document.getElementById("installnote").textContent =
+      "On iPhone: Apple blocks the Bluetooth advertising this needs. Open the viewer instead — it works anywhere.";
   }
-  const silentNow = reports.filter(r => r.silence === "UNEXPECTED_SILENCE").length;
-
-  $("gen").textContent = "snapshot " + hhmm(data.generatedAt);
-  $("s-cells").textContent = cells.size;
-  $("s-loss").textContent = losses.length;
-  $("s-reports").textContent = reports.length;
-  $("s-silent").textContent = silentNow;
-  $("s-silent").classList.toggle("hot", silentNow > 0);
-  $("alertline").hidden = !(losses.length && silentNow);
-
-  drawTriage(reports);
-  layout(); draw();
-}
-
-/* ---- grid ---- */
-let GEO = null;
-function layout(){
-  if(!SNAPSHOT) return;
-  const cv = $("map");
-  const cssW = cv.getBoundingClientRect().width || 900;
-  const cells = cellList(), losses = SNAPSHOT.cellLosses || [];
-  const keys = cells.concat(losses.map(l => l.cell));
-  if(!keys.length){ GEO = null; const g=cv.getContext("2d"); g.clearRect(0,0,cv.width,cv.height); return; }
-  const lats = keys.map(k => k.lat), lons = keys.map(k => k.lon);
-  const minLat = Math.min(...lats)-1, maxLat = Math.max(...lats)+1;
-  const minLon = Math.min(...lons)-1, maxLon = Math.max(...lons)+1;
-  const rows = Math.min(maxLat-minLat+1, 48), cols = Math.min(maxLon-minLon+1, 48);
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  const cellPx = Math.max(18, Math.min(64, Math.floor(cssW / cols)));
-  cv.style.width = cssW + "px";
-  cv.width = Math.round(cols*cellPx*dpr);
-  cv.height = Math.round(rows*cellPx*dpr);
-  cv.style.height = (rows*cellPx) + "px";
-  GEO = {minLat,minLon,rows,cols,dpr,
-    confByCell:index(SNAPSHOT.confidence,"cell"),
-    lossByCell:index(SNAPSHOT.cellLosses,"cell"),
-    cells:index2(cells)};
-}
-function cellList(){
-  const m = new Map();
-  for(const r of (SNAPSHOT.reports||[])){
-    const k = r.cell.lat+","+r.cell.lon;
-    const c = m.get(k) || {lat:r.cell.lat,lon:r.cell.lon,n:0,sevSum:0};
-    c.n++; c.sevSum += r.severity; m.set(k,c);
-  }
-  return [...m.values()];
-}
-const index = (arr,f) => { const o={}; (arr||[]).forEach(x => o[x[f].lat+","+x[f].lon]=x); return o; };
-const index2 = arr => { const o={}; arr.forEach(c => o[c.lat+","+c.lon]=c); return o; };
-
-function roundRect(g,x,y,w,h,r){ g.beginPath();
-  g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
-  g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
-
-function draw(){
-  if(!GEO){ return; }
-  const cv = $("map"), g = cv.getContext("2d");
-  const {minLat,minLon,rows,cols,dpr,confByCell,lossByCell,cells} = GEO;
-  g.save(); g.scale(dpr,dpr);
-  const W = cv.width/dpr, H = cv.height/dpr;
-  g.clearRect(0,0,W,H);
-  const cw = W/cols, ch = H/rows, gap = Math.min(cw,ch)*0.1;
-
-  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
-    const key = (minLat+r)+","+(minLon+c);
-    const x = c*cw, y = (rows-1-r)*ch;           /* north up */
-    const tx = x+gap, ty = y+gap, tw = cw-2*gap, th = ch-2*gap;
-    const loss = lossByCell[key], cell = cells[key];
-
-    if(loss){
-      roundRect(g,tx,ty,tw,th,4); g.fillStyle = "#070a0d"; g.fill();
-      g.save(); g.clip();
-      g.strokeStyle = alpha("rgb(239,91,50)",0.6); g.lineWidth = 2;
-      for(let d=-th; d<tw; d+=13){ g.beginPath(); g.moveTo(tx+d,ty+th); g.lineTo(tx+d+th,ty); g.stroke(); }
-      g.restore();
-      roundRect(g,tx,ty,tw,th,4);
-      g.strokeStyle = alpha("rgb(237,232,218)", reduced ? 1 : 0.35 + 0.55*pulse);
-      g.lineWidth = 3; g.stroke();
-      bigLabel(g, loss.deviceCount + " dark", hhmm(loss.lastSilent), tx,ty,tw,th, "#ede8da");
-    } else if(cell){
-      const avg = (cell.sevSum/cell.n)/15;
-      const cf = confByCell[key] ? confByCell[key].confidence : 1;
-      const a = Math.max(0.28, Math.min(0.9, 0.28 + 0.62*cf));
-      roundRect(g,tx,ty,tw,th,6); g.fillStyle = alpha(sev(avg), a); g.fill();
-      if(cf < 0.4){ g.setLineDash([5,5]); g.strokeStyle = "#7c8792"; g.lineWidth = 1.5; g.stroke(); g.setLineDash([]); }
-      bigLabel(g, String(cell.n), null, tx,ty,tw,th, "#070a0d");
-    } else {
-      roundRect(g,tx,ty,tw,th,6); g.fillStyle = "#070a0d"; g.fill();
-      g.strokeStyle = "#223038"; g.lineWidth = 1; g.stroke();
-    }
-  }
-  g.restore();
-}
-function bigLabel(g,text,sub,x,y,w,h,color){
-  const ts = Math.min(w,h) * (sub ? 0.2 : 0.32);
-  g.fillStyle = color; g.textAlign = "center"; g.textBaseline = "middle";
-  g.font = `600 ${ts}px "IBM Plex Mono", monospace`;
-  const cx = x+w/2, cy = y+h/2;
-  if(sub){ g.fillText(text, cx, cy - ts*0.55); g.font = `500 ${ts*0.82}px "IBM Plex Mono", monospace`; g.fillText(sub, cx, cy + ts*0.6); }
-  else g.fillText(text, cx, cy);
-}
-
-if(!reduced){
-  setInterval(() => { pulse = (Math.sin(Date.now()/450) + 1) / 2; if(GEO && ($("map").getBoundingClientRect().height)) draw(); }, 60);
-}
-addEventListener("resize", () => { layout(); draw(); });
-
-/* ---- triage ---- */
-const JUST_LOST = 5*60*1000;
-function tier(r){
-  if(r.status === 3 && r.altTrend > 0) return 5;
-  if(r.silence === "UNEXPECTED_SILENCE" && r.lastHeardMs < JUST_LOST) return 4;
-  if(r.status === 2 && r.altDelta !== NO_BARO && r.altDelta < 0) return 3;
-  if(r.battery >= 0 && r.battery < 10) return 2;
-  return 1;
-}
-const whyText = r => ({5:"rising water · climbing",4:"just went silent",3:"trapped · below grade",2:"battery critical"})[tier(r)] || ("severity "+r.severity);
-function pill(s){
-  return ({
-    ALIVE:            ["var(--calm)","#f6f3ec","LIVE"],
-    OVERDUE:          ["var(--amber)","#0e1114","OVERDUE"],
-    EXPECTED_SILENCE: ["#d8d2c4","#0e1114","EXPECTED"],
-    UNEXPECTED_SILENCE:["var(--alarm-deep)","#f6f3ec","SILENT"],
-  })[s] || ["var(--calm)","#f6f3ec","LIVE"];
-}
-function drawTriage(reports){
-  const ol = $("triage");
-  if(!reports.length){ ol.innerHTML = '<div class="empty">No reports in this snapshot.</div>'; return; }
-  const rows = [...reports].sort((a,b) => tier(b)-tier(a) || b.severity-a.severity || a.lastHeardMs-b.lastHeardMs);
-  ol.innerHTML = rows.map((r,i) => {
-    const [pb,pf,pt] = pill(r.silence);
-    const alt = r.altDelta === NO_BARO ? "alt —"
-      : `alt ${r.altDelta>0?"+":""}${r.altDelta}m${r.altTrend>0?" ↑":r.altTrend<0?" ↓":""}`;
-    const age = r.lastHeardMs < 90000 ? Math.round(r.lastHeardMs/1000)+"s" : Math.round(r.lastHeardMs/60000)+"m";
-    return `<li>
-      <div class="rank" style="background:${sev(r.severity/15)}">${i+1}</div>
-      <div class="body">
-        <div class="st">${STATUS[r.status] || "UNKNOWN"}</div>
-        <div class="meta">${alt} · ${age} ago · ${r.battery}% · ${r.hops} hop${r.hops===1?"":"s"}</div>
-        <div class="why">${whyText(r)}</div>
-      </div>
-      <div class="pill" style="background:${pb};color:${pf}">${pt}</div>
-    </li>`;
-  }).join("");
-}
-
-/* ---- load ---- */
-const drop = $("drop"), file = $("file");
-const openPicker = () => file.click();
-drop.addEventListener("click", openPicker);
-drop.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); openPicker(); } });
-file.addEventListener("change", e => { const f = e.target.files[0]; if(f) f.text().then(parse); });
-["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hot"); }));
-["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hot"); }));
-drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if(f) f.text().then(parse); });
-function parse(txt){
-  try { ingest(JSON.parse(txt)); }
-  catch(err){ $("gen").textContent = "could not read that file — " + err.message; }
-}
-
-/* demo snapshot so the page isn't empty on first open */
-ingest({
-  v:2, generatedAt: Date.now(),
-  reports:[
-    {deviceId:"aabbccddeeff",cell:{lat:2,lon:-1},severity:11,status:2,battery:53,hops:1,altDelta:4,altTrend:2,silence:"ALIVE",lastHeardMs:1200},
-    {deviceId:"112233445566",cell:{lat:2,lon:-1},severity:9,status:3,battery:71,hops:1,altDelta:6,altTrend:3,silence:"ALIVE",lastHeardMs:800},
-    {deviceId:"ab12ab12ab12",cell:{lat:2,lon:-1},severity:10,status:4,battery:40,hops:2,altDelta:2,altTrend:0,silence:"OVERDUE",lastHeardMs:22000},
-    {deviceId:"778899aabbcc",cell:{lat:-1,lon:1},severity:14,status:2,battery:4,hops:2,altDelta:-3,altTrend:0,silence:"UNEXPECTED_SILENCE",lastHeardMs:41000},
-    {deviceId:"cc00cc00cc00",cell:{lat:3,lon:2},severity:7,status:1,battery:66,hops:1,altDelta:-128,altTrend:0,silence:"ALIVE",lastHeardMs:600},
-    {deviceId:"ddeeff001122",cell:{lat:5,lon:5},severity:3,status:0,battery:88,hops:1,altDelta:-128,altTrend:0,silence:"ALIVE",lastHeardMs:500}
-  ],
-  cellLosses:[{cell:{lat:-1,lon:1},deviceCount:12,silentCount:12,firstSilent:Date.now()-140000,lastSilent:Date.now()-70000}],
-  confidence:[
-    {cell:{lat:2,lon:-1},severity:11,confidence:0.86,devices:3,pathDiversity:2,verified:false},
-    {cell:{lat:3,lon:2},severity:7,confidence:0.68,devices:1,pathDiversity:1,verified:true},
-    {cell:{lat:5,lon:5},severity:3,confidence:0.12,devices:1,pathDiversity:1,verified:false}
-  ]
-});
 </script>
+</body>
+</html>
