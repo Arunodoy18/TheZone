@@ -1,6 +1,7 @@
 package com.thezone.transport
 
 import android.content.Context
+import android.util.Log
 import com.thezone.demo.HeartbeatSource
 import com.thezone.packet.Packet
 import com.thezone.packet.PacketCodec
@@ -87,9 +88,17 @@ object TransportController {
         val decoded = runCatching { PacketCodec.decode(inbound.bytes) }.getOrNull()
         val idHex = runCatching { PacketCodec.contentId(inbound.bytes).toHex() }.getOrNull()
             ?: inbound.bytes.toHex()
+        Log.d(
+            "TheZone",
+            "RX ${inbound.bytes.toHex()} rssi=${inbound.rssi} phy=${inbound.phy} " +
+                "dev=${decoded?.deviceId?.toHex() ?: "??"}",
+        )
+        // Key the debug list by sender so it stays "one row per phone" during the
+        // checkpoint. Real content-addressed dedup is H3's job (keyed on contentId).
+        val rowKey = decoded?.deviceId?.toHex() ?: idHex
         synchronized(lock) {
-            val existing = rows[idHex]
-            rows[idHex] = ReceivedRow(
+            val existing = rows[rowKey]
+            rows[rowKey] = ReceivedRow(
                 contentIdHex = idHex,
                 rawHex = inbound.bytes.toHex(),
                 packet = decoded,

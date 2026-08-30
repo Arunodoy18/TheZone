@@ -1,5 +1,6 @@
 package com.thezone.transport
 
+import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,17 +64,19 @@ abstract class BaseTransport(final override val kind: String) : ReportTransport 
         emitDiagnostics()
     }
 
-    /** Append a timestamped line and emit fresh diagnostics. */
+    /** Append a timestamped line, mirror it to logcat, and emit fresh diagnostics. */
     protected fun log(line: String) {
         synchronized(lock) {
             logLines.addLast("${timestamp()}  $line")
             while (logLines.size > MAX_LOG_LINES) logLines.removeFirst()
         }
+        Log.d(LOG_TAG, "[$kind] $line")
         emitDiagnostics()
     }
 
     protected fun fail(message: String) {
         lastError = message
+        Log.w(LOG_TAG, "[$kind] ERROR: $message")
         log("ERROR: $message")
     }
 
@@ -112,6 +115,9 @@ abstract class BaseTransport(final override val kind: String) : ReportTransport 
 
         /** Company ID for manufacturer-specific data (0xFFFF is demo-reserved). */
         const val COMPANY_ID = 0xFFFF
+
+        /** `adb logcat -s TheZone` to follow every transport line on-device. */
+        const val LOG_TAG = "TheZone"
 
         private const val MAX_LOG_LINES = 40
 

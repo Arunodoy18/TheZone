@@ -51,6 +51,9 @@ android {
 
     testOptions {
         unitTests.all { it.useJUnit() }
+        // android.util.Log etc. are stubs in JVM unit tests; return defaults
+        // instead of throwing so the pure-logic transports stay testable.
+        unitTests.isReturnDefaultValues = true
     }
 }
 

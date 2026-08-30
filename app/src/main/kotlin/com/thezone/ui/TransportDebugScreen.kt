@@ -175,7 +175,7 @@ fun TransportDebugScreen() {
         KeyVal("running / adv / scan", "${diagnostics.running} / ${diagnostics.advertising} / ${diagnostics.scanning}")
         KeyVal("PHY active", phyLabel(diagnostics.codedPhyActive, diagnostics.oneMPhyActive, diagnostics.legacyFallbackActive))
         KeyVal("sent / received", "${diagnostics.packetsSent} / ${diagnostics.packetsReceived}")
-        KeyVal("distinct peers", rows.size.toString())
+        KeyVal("peers heard", rows.size.toString())
         diagnostics.lastError?.let {
             Text("last error: $it", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }

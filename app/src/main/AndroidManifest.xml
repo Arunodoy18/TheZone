@@ -50,7 +50,7 @@
         </activity>
 
         <service
-            android:name=".transport.BleForegroundService"
+            android:name="com.thezone.transport.BleForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
     </application>
