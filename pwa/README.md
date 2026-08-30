@@ -9,7 +9,7 @@ Two builds of the same viewer:
 | File | Use |
 |---|---|
 | `eoc.html` | zero-dependency, works from `file://`. Double-click, drop the JSON. |
-| `eoc-hosted.html` | design pass (IBM Plex, sonar console layout). Needs a network font; deployed as a Claude Artifact: **https://claude.ai/code/artifact/3ad51630-bccd-4cb1-8211-c18b7e9df289** |
+| `index.html` | design pass (IBM Plex, sonar console layout). Needs a network font; site root; also a Claude Artifact: **https://claude.ai/code/artifact/3ad51630-bccd-4cb1-8211-c18b7e9df289** |
 
 Both render the same thing from the same JSON.
 

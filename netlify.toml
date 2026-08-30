@@ -1,0 +1,3 @@
+# Static PWA — no build step. The EOC viewer folder is the site root.
+[build]
+  publish = "pwa"
