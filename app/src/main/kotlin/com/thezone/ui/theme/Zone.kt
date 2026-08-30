@@ -4,38 +4,46 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 
 /**
- * Brand-neutral palette derived from the subject: a sonar / topographic display.
- * Near-black ground, one restrained signal accent, a desaturated severity ramp.
- * Deliberately not gradient-on-dark-with-an-acid-accent.
+ * Brand-neutral palette derived from the subject: a sonar / bathymetric display.
+ * Near-black ground, one phosphor accent, a severity ramp that reads like
+ * elevation gaining toward danger. Hairline rules stand in for contour / range
+ * rings. Not gradient-on-dark-with-an-acid-accent.
  */
 object Zone {
 
-    // Dark surfaces (Citizen, Map)
-    val ink = Color(0xFF0A0E12)
-    val inkSoft = Color(0xFF141B22)
-    val inkLine = Color(0xFF263039)
+    // --- dark surfaces: Citizen, Map ---
+    val ink = Color(0xFF070A0D)          // near-black ground
+    val inkSoft = Color(0xFF10161C)      // panel
+    val inkLine = Color(0xFF223038)      // hairline / contour
 
-    // Text on dark
-    val bone = Color(0xFFE9E4D8)
-    val boneDim = Color(0xFF8C949E)
+    val bone = Color(0xFFEDE8DA)         // primary text on dark
+    val boneDim = Color(0xFF7C8792)      // secondary text
+    val boneFaint = Color(0xFF3B454E)    // tertiary / disabled
 
-    // The one accent — "you are heard"
-    val signal = Color(0xFF19E3C3)
+    /** the one accent — "you are heard" / live contact */
+    val signal = Color(0xFF1BE7C4)
 
-    // Severity ramp / alerts
-    val calm = Color(0xFF2E7D8A)
+    // --- severity ramp: calm water -> shoal -> alarm ---
+    val calm = Color(0xFF1F6E7B)
+    val shoal = Color(0xFF3FA7A0)
     val amber = Color(0xFFF2A93B)
-    val alarm = Color(0xFFE4572E)
+    val alarm = Color(0xFFEF5B32)
+    val alarmDeep = Color(0xFFB5311B)
 
-    // Daylight surfaces (Responder — gloves, sun, one hand)
-    val paper = Color(0xFFF3F0E8)
-    val paperInk = Color(0xFF14181C)
-    val paperLine = Color(0xFFCBC6B8)
+    // --- daylight surfaces: Responder (gloves, sun, one hand) ---
+    val paper = Color(0xFFF6F3EC)
+    val paperPanel = Color(0xFFFFFFFF)
+    val paperInk = Color(0xFF0E1114)     // max-contrast text
+    val paperDim = Color(0xFF4A5157)
+    val paperLine = Color(0xFFD8D2C4)
 
-    /** Severity 0..15 → colour. Low = calm teal, mid = amber, high = signal red. */
+    /** Severity 0..15 -> colour on the calm→shoal→amber→alarm ramp. */
     fun severity(sev0to15: Int): Color {
-        val t = (sev0to15.coerceIn(0, 15)) / 15f
-        return if (t < 0.5f) lerp(calm, amber, t / 0.5f)
-        else lerp(amber, alarm, (t - 0.5f) / 0.5f)
+        val t = sev0to15.coerceIn(0, 15) / 15f
+        return when {
+            t < 0.34f -> lerp(calm, shoal, t / 0.34f)
+            t < 0.67f -> lerp(shoal, amber, (t - 0.34f) / 0.33f)
+            else -> lerp(amber, alarm, (t - 0.67f) / 0.33f)
+        }
     }
 }

@@ -18,19 +18,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,16 +49,13 @@ import com.thezone.transport.TransportController
 import com.thezone.ui.theme.Zone
 
 /**
- * Map / EOC (PRD §3 C). Projector-facing. The one screen where the USP has to be
+ * Map / EOC (PRD §3 C). Projector-facing. The one screen where the USP must be
  * visible: a cell where every device went silent at once must NOT look like a
- * cell that never had coverage. No-data is flat and recessive; CELL_LOSS gets its
- * own visual language — a bright, hatched, labelled hole — and carries a time.
+ * cell that never had coverage. Empty is flat and recessive; CELL_LOSS is a
+ * bright, hatched, labelled hole with a timestamp. A time scrubber replays the
+ * event so you can watch the hole open.
  */
-private class CellState(
-    var devices: Int = 0,
-    var severitySum: Int = 0,
-    var silent: Int = 0,
-) {
+private class CellState(var devices: Int = 0, var severitySum: Int = 0, var silent: Int = 0) {
     val avgSeverity: Int get() = if (devices == 0) 0 else severitySum / devices
 }
 
@@ -59,249 +64,187 @@ fun MapScreen() {
     transportTick()
 
     val cellByDevice = TransportController.silenceDevices.associate { it.deviceIdHex to it.cell }
-    val losses: Map<GridCell, CellLoss> = TransportController.cellLosses.associateBy { it.cell }
+    val allLosses: List<CellLoss> = TransportController.cellLosses
+    val reports = TransportController.reports
+    val scenario = TransportController.simScenario
+
+    // time window for the scrubber
+    val tMin = reports.minOfOrNull { it.firstHeardAtMillis } ?: 0L
+    val tMax = System.currentTimeMillis()
+    var scrub by remember { mutableFloatStateOf(1f) }
+    val live = scrub >= 0.999f || tMax <= tMin
+    val tAt = if (live) tMax else (tMin + (scrub.toDouble() * (tMax - tMin)).toLong())
 
     val cells = HashMap<GridCell, CellState>()
-    TransportController.triageEntries().forEach { e ->
-        val cell = cellByDevice[e.deviceIdHex] ?: fallbackCell(e.deviceIdHex)
+    reports.filterNot { it.isOwn }.forEach { r ->
+        if (!live && r.firstHeardAtMillis > tAt) return@forEach
+        val dev = r.packet.deviceId.joinToString("") { "%02x".format(it) }
+        val cell = cellByDevice[dev] ?: fallbackCell(dev)
         val st = cells.getOrPut(cell) { CellState() }
         st.devices++
-        st.severitySum += e.severity
-        if (e.silence == SilenceState.UNEXPECTED_SILENCE) st.silent++
+        st.severitySum += r.packet.severity
     }
+    // fold silence state in (live only — historical per-device state isn't reconstructed)
+    if (live) {
+        TransportController.silenceDevices.forEach { d ->
+            val cell = d.cell ?: fallbackCell(d.deviceIdHex)
+            if (d.state == SilenceState.UNEXPECTED_SILENCE) cells[cell]?.let { it.silent++ }
+        }
+    }
+    val losses: Map<GridCell, CellLoss> = allLosses
+        .filter { live || it.firstSilentAtMillis <= tAt }
+        .associateBy { it.cell }
 
-    val pulse by rememberInfiniteTransition(label = "cellloss").animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "pulse",
+    val pulse by rememberInfiniteTransition(label = "cl").animateFloat(
+        0.30f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "p",
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Zone.ink)
-            .padding(16.dp),
-    ) {
-        Text("Severity map", color = Zone.bone, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        val scenario = TransportController.simScenario
+    Column(Modifier.fillMaxSize().background(Zone.ink).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("SEVERITY MAP", color = Zone.bone, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (live) "LIVE" else "REPLAY ${clock(tAt)}",
+                color = if (live) Zone.signal else Zone.amber,
+                fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+            )
+        }
         Text(
             buildString {
                 append("${cells.size} cells · ${losses.size} collapsed")
-                if (scenario != null) {
-                    append("  ·  toll ${scenario.second}")
-                    append("  ·  ${(scenario.first * 100).toInt()}%")
-                }
+                if (scenario != null) append("  ·  toll ${scenario.second}  ·  ${(scenario.first * 100).toInt()}%")
             },
-            color = Zone.boneDim,
-            fontSize = 13.sp,
+            color = Zone.boneDim, fontSize = 14.sp,
         )
         Spacer(Modifier.height(12.dp))
 
         Box(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Zone.inkSoft),
+            Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Zone.inkSoft),
         ) {
             if (cells.isEmpty()) {
-                Text(
-                    "No signals yet.",
-                    color = Zone.boneDim,
-                    fontSize = 16.sp,
-                    modifier = Modifier.align(Alignment.Center),
-                )
+                Text("No signals yet.", color = Zone.boneDim, fontSize = 18.sp, modifier = Modifier.align(Alignment.Center))
             } else {
                 MapGrid(cells, losses, pulse)
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Legend()
-    }
-}
 
-@Composable
-private fun MapGrid(
-    cells: Map<GridCell, CellState>,
-    losses: Map<GridCell, CellLoss>,
-    pulse: Float,
-) {
-    val keys = cells.keys + losses.keys
-    val minLat = keys.minOf { it.latIndex } - 1
-    val maxLat = keys.maxOf { it.latIndex } + 1
-    val minLon = keys.minOf { it.lonIndex } - 1
-    val maxLon = keys.maxOf { it.lonIndex } + 1
-    val rows = (maxLat - minLat + 1).coerceAtLeast(1)
-    val cols = (maxLon - minLon + 1).coerceAtLeast(1)
-
-    Canvas(Modifier.fillMaxSize().padding(8.dp)) {
-        val cw = size.width / cols
-        val ch = size.height / rows
-        val pad = minOf(cw, ch) * 0.06f
-
-        for (r in 0 until rows) {
-            for (c in 0 until cols) {
-                val cell = GridCell(minLat + r, minLon + c)
-                val x = c * cw
-                // draw north (higher lat) at the top
-                val y = (rows - 1 - r) * ch
-                val topLeft = Offset(x + pad, y + pad)
-                val cellSize = Size(cw - pad * 2, ch - pad * 2)
-
-                val loss = losses[cell]
-                val state = cells[cell]
-
-                when {
-                    loss != null -> drawCellLoss(topLeft, cellSize, pulse)
-                    state != null -> drawActiveCell(topLeft, cellSize, state)
-                    else -> drawEmptyCell(topLeft, cellSize)
-                }
-
-                if (loss != null) {
-                    drawLabel(
-                        "${loss.deviceCount} dark",
-                        clock(loss.lastSilentAtMillis),
-                        topLeft, cellSize, Zone.bone,
-                    )
-                } else if (state != null) {
-                    drawLabel("${state.devices}", null, topLeft, cellSize, Zone.ink)
-                }
+        if (tMax > tMin) {
+            Slider(
+                value = scrub,
+                onValueChange = { scrub = it },
+                colors = SliderDefaults.colors(
+                    thumbColor = Zone.signal,
+                    activeTrackColor = Zone.signal,
+                    inactiveTrackColor = Zone.inkLine,
+                ),
+            )
+            Row(Modifier.fillMaxWidth()) {
+                Text(clock(tMin), color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Spacer(Modifier.weight(1f))
+                Text("now", color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             }
         }
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEmptyCell(
-    topLeft: Offset,
-    size: Size,
-) {
-    // recessive: barely-there. Must not compete with a collapse.
-    drawRoundRect(
-        color = Zone.ink,
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f),
-    )
-    drawRoundRect(
-        color = Zone.inkLine,
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f),
-        style = Stroke(width = 1f),
-    )
-}
+@Composable
+private fun MapGrid(cells: Map<GridCell, CellState>, losses: Map<GridCell, CellLoss>, pulse: Float) {
+    val keys = cells.keys + losses.keys
+    val minLat = keys.minOf { it.latIndex } - 1
+    val maxLat = keys.maxOf { it.latIndex } + 1
+    val minLon = keys.minOf { it.lonIndex } - 1
+    val maxLon = keys.maxOf { it.lonIndex } + 1
+    val rows = (maxLat - minLat + 1).coerceIn(1, 40)
+    val cols = (maxLon - minLon + 1).coerceIn(1, 40)
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActiveCell(
-    topLeft: Offset,
-    size: Size,
-    state: CellState,
-) {
-    val base = Zone.severity(state.avgSeverity)
-    drawRoundRect(
-        color = base.copy(alpha = 0.85f),
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f),
-    )
-    if (state.silent > 0) {
-        // some silent, not a full collapse — a thin alarm rule along the top
-        drawRoundRect(
-            color = Zone.alarm,
-            topLeft = topLeft,
-            size = Size(size.width, 4f),
-        )
-    }
-}
+    Canvas(Modifier.fillMaxSize().padding(10.dp)) {
+        val cw = size.width / cols
+        val ch = size.height / rows
+        val gap = minOf(cw, ch) * 0.10f
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCellLoss(
-    topLeft: Offset,
-    size: Size,
-    pulse: Float,
-) {
-    // a hole punched in the map: near-black fill, bright pulsing frame,
-    // diagonal hazard hatch. Nothing else on the screen looks like this.
-    drawRoundRect(
-        color = Zone.ink,
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
-    )
-    clipRect(topLeft.x, topLeft.y, topLeft.x + size.width, topLeft.y + size.height) {
-        val step = 14f
-        var d = -size.height
-        while (d < size.width) {
-            drawLine(
-                color = Zone.alarm.copy(alpha = 0.55f),
-                start = Offset(topLeft.x + d, topLeft.y + size.height),
-                end = Offset(topLeft.x + d + size.height, topLeft.y),
-                strokeWidth = 2f,
-            )
-            d += step
+        for (r in 0 until rows) for (c in 0 until cols) {
+            val cell = GridCell(minLat + r, minLon + c)
+            val x = c * cw
+            val y = (rows - 1 - r) * ch // north up
+            val tl = Offset(x + gap, y + gap)
+            val sz = Size(cw - gap * 2, ch - gap * 2)
+            val loss = losses[cell]
+            val st = cells[cell]
+            when {
+                loss != null -> drawCellLoss(tl, sz, pulse)
+                st != null -> drawActiveCell(tl, sz, st)
+                else -> drawEmptyCell(tl, sz)
+            }
+            if (loss != null) label("${loss.deviceCount} dark", clock(loss.lastSilentAtMillis), tl, sz, Zone.bone)
+            else if (st != null && st.devices > 0) label("${st.devices}", null, tl, sz, Zone.ink)
         }
     }
-    drawRoundRect(
-        color = Zone.bone.copy(alpha = pulse),
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
-        style = Stroke(width = 3f),
-    )
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabel(
-    text: String,
-    subText: String?,
-    topLeft: Offset,
-    size: Size,
-    color: Color,
-) {
+private fun DrawScope.drawEmptyCell(tl: Offset, sz: Size) {
+    drawRoundRect(Zone.ink, tl, sz, CornerRadius(6f))
+    drawRoundRect(Zone.inkLine, tl, sz, CornerRadius(6f), style = Stroke(width = 1f))
+}
+
+private fun DrawScope.drawActiveCell(tl: Offset, sz: Size, st: CellState) {
+    drawRoundRect(Zone.severity(st.avgSeverity).copy(alpha = 0.9f), tl, sz, CornerRadius(6f))
+    if (st.silent > 0) drawRoundRect(Zone.alarm, tl, Size(sz.width, 5f))
+}
+
+private fun DrawScope.drawCellLoss(tl: Offset, sz: Size, pulse: Float) {
+    drawRoundRect(Zone.ink, tl, sz, CornerRadius(4f))
+    clipRect(tl.x, tl.y, tl.x + sz.width, tl.y + sz.height) {
+        var d = -sz.height
+        while (d < sz.width) {
+            drawLine(Zone.alarm.copy(alpha = 0.6f),
+                Offset(tl.x + d, tl.y + sz.height), Offset(tl.x + d + sz.height, tl.y), strokeWidth = 2f)
+            d += 14f
+        }
+    }
+    drawRoundRect(Zone.bone.copy(alpha = pulse), tl, sz, CornerRadius(4f), style = Stroke(width = 3f))
+}
+
+private fun DrawScope.label(text: String, sub: String?, tl: Offset, sz: Size, color: Color) {
     drawContext.canvas.nativeCanvas.apply {
-        val ts = minOf(size.width, size.height) * (if (subText == null) 0.26f else 0.18f)
-        val paint = android.graphics.Paint().apply {
-            this.color = color.toArgb()
-            textSize = ts
-            isAntiAlias = true
+        val ts = minOf(sz.width, sz.height) * (if (sub == null) 0.30f else 0.19f)
+        val p = android.graphics.Paint().apply {
+            this.color = color.toArgb(); textSize = ts; isAntiAlias = true
             typeface = android.graphics.Typeface.MONOSPACE
             textAlign = android.graphics.Paint.Align.CENTER
         }
-        val cx = topLeft.x + size.width / 2
-        val cy = topLeft.y + size.height / 2
-        if (subText == null) {
-            drawText(text, cx, cy + ts / 3, paint)
-        } else {
-            drawText(text, cx, cy - ts * 0.15f, paint)
-            drawText(subText, cx, cy + ts * 1.1f, paint)
-        }
+        val cx = tl.x + sz.width / 2; val cy = tl.y + sz.height / 2
+        if (sub == null) drawText(text, cx, cy + ts / 3, p)
+        else { drawText(text, cx, cy - ts * 0.1f, p); drawText(sub, cx, cy + ts * 1.15f, p) }
     }
 }
 
 @Composable
 private fun Legend() {
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         LegendItem(Zone.inkLine, "no data")
         LegendItem(Zone.severity(4), "low")
         LegendItem(Zone.severity(14), "high")
-        LegendItem(Zone.bone, "CELL_LOSS")
+        LegendItem(Zone.bone, "collapsed")
     }
 }
 
 @Composable
 private fun LegendItem(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(color))
-        Spacer(Modifier.size(6.dp))
-        Text(label, color = Zone.boneDim, fontSize = 12.sp)
+        Box(Modifier.size(16.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.size(7.dp))
+        Text(label, color = Zone.boneDim, fontSize = 13.sp)
     }
 }
 
-/** Devices with no GPS fix still land on the grid so a live 3-phone demo isn't blank. */
+/** Devices with no GPS fix still land on the grid so a live demo isn't blank. */
 private fun fallbackCell(deviceIdHex: String): GridCell {
     val h = deviceIdHex.hashCode()
-    return GridCell(((h ushr 8) and 0x3) - 1, (h and 0x3) - 1)
+    return GridCell(((h ushr 8) and 0x7) - 3, (h and 0x7) - 3)
 }
 
 private val hhmm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
-
 private fun clock(millis: Long): String = hhmm.format(java.util.Date(millis))
