@@ -66,7 +66,12 @@ class InboundPacket(
     }
 }
 
-enum class PacketPhy { LEGACY_1M, CODED, UNKNOWN }
+/**
+ * Which PHY an inbound advertisement arrived on. Diagnostics only — never feeds
+ * logic. `ONE_M` covers both legacy and extended advertising on the 1M primary
+ * channel; `CODED` is LE Long Range (S=8).
+ */
+enum class PacketPhy { ONE_M, CODED, UNKNOWN }
 
 /**
  * A snapshot of transport state for the in-app log the demo displays. Immutable;

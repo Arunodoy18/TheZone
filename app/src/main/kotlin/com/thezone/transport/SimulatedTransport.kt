@@ -79,7 +79,7 @@ class SimulatedTransport(
                         bytes = bytes,
                         rssi = peer.rssi(tick),
                         receivedAtMillis = System.currentTimeMillis(),
-                        phy = if (tick % 2 == 0L) PacketPhy.CODED else PacketPhy.LEGACY_1M,
+                        phy = if (tick % 2 == 0L) PacketPhy.CODED else PacketPhy.ONE_M,
                     ),
                 )
             }
