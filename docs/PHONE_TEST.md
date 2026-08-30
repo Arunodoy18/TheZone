@@ -44,9 +44,11 @@ Single-phone, via the "H2 Transport" tab → BLE → Start. Follow with `adb log
 |---|---|---|---|---|---|
 | Samsung Galaxy S23 | yes | yes | started (txPower +1 dBm) | started | Simulated mode also decoded 3 peers |
 | Realme 7 | yes | yes | started (txPower −2 dBm) | started | API 30 — only FINE_LOCATION gates it |
-| Motorola Edge 50 Pro | _pending_ | | | | |
+| Motorola Edge 50 Pro | yes | yes | started (txPower 0 dBm) | started | API 36 |
 
-**Two-phone air path (A advertises → B receives + decodes) not yet run — that is the H2 checkpoint.**
+All three advertise on both PHYs and scan without error. **Two-phone air path
+(A advertises → B receives + decodes) not yet run — that is the H2 checkpoint.**
+Device ids seen: S23 `d675c51afb0d`, Realme 7 `ca949dc36761`, Motorola `d7aad5677d8c`.
 
 **Barometer is the constraint:** only the S23 has one. So role assignment is forced:
 
