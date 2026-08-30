@@ -14,7 +14,7 @@ import com.thezone.packet.PacketCodec
  */
 class ReportStore(
     /** Hard cap; the least-recently-heard non-own report is evicted past this. */
-    private val maxReports: Int = 600,
+    private val maxReports: Int = 2_000,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
 

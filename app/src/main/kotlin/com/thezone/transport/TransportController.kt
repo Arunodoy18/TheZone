@@ -2,7 +2,6 @@ package com.thezone.transport
 
 import android.content.Context
 import android.util.Log
-import com.thezone.core.AcceptOutcome
 import com.thezone.core.CellLoss
 import com.thezone.core.DeviceSilence
 import com.thezone.core.ReportStore
@@ -115,7 +114,11 @@ object TransportController {
             )
         }
 
-    fun useSimulated() = swap(SimulatedTransport())
+    fun useSimulated(nodeCount: Int = 500) = swap(SimulatedTransport(nodeCount = nodeCount))
+
+    /** Sim scenario progress 0..1 and the replayed toll, or null when not simulating. */
+    val simScenario: Pair<Float, Int>?
+        get() = (transport as? SimulatedTransport)?.let { it.progress to it.toll }
 
     fun useFile() = swap(FileTransport())
 
@@ -185,20 +188,16 @@ object TransportController {
     }
 
     private fun ingest(inbound: InboundPacket) {
-        val outcome = store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
+        store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
         val packet = runCatching { PacketCodec.decode(inbound.bytes) }.getOrNull()
         if (packet != null) {
             val dev = packet.deviceId.toHex()
             if (dev != store.ownDeviceIdHex) {
                 silence.onPacket(dev, packet, inbound.receivedAtMillis)
             }
-            if (outcome == AcceptOutcome.NEW || outcome == AcceptOutcome.UPDATED) {
-                Log.d(
-                    "TheZone",
-                    "$outcome ${inbound.bytes.toHex()} rssi=${inbound.rssi} phy=${inbound.phy} dev=$dev",
-                )
-            }
         }
+        // Per-packet logging would flood logcat at H7 scale (500 nodes). The demo
+        // watches SILENCE / CELL_LOSS lines from the pump instead.
         ping()
     }
 

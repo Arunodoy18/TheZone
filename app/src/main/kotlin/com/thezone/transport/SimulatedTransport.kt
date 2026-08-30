@@ -4,23 +4,30 @@ import com.thezone.packet.DeviceIdentity
 import com.thezone.packet.EventClock
 import com.thezone.packet.Packet
 import com.thezone.packet.PacketCodec
+import com.thezone.packet.Status
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
- * Demo insurance (CLAUDE.md standing rules). A pure in-process transport: no
- * radio, no Android. A handful of synthetic peers each emit a well-formed 31-byte
- * packet on an interval, so Dead Man's Packet, triage and barometry can all be
- * exercised and demoed when BLE will not cooperate.
+ * Demo insurance + the PS5 scale story (H7). An in-process, radio-free transport
+ * that seeds [nodeCount] synthetic devices over Rasuwagadhi geography and
+ * replays the real toll curve (22 → 95 → 469 → 626 over 72 h) compressed to
+ * [scenarioSeconds] of stage time.
  *
- * `advertise()` is accepted and logged but not echoed back — a real peer never
- * hears its own broadcast either.
+ * Two events are *scripted*, not left to chance (BUILD_PLAN): a whole cluster
+ * goes dark inside a few seconds → CELL_LOSS on the map; and two lone nodes go
+ * dark — one on a healthy battery (UNEXPECTED_SILENCE) and one on a critical
+ * battery (EXPECTED_SILENCE) — so the T3/T4 distinction demos from the simulator
+ * alone.
+ *
+ * Pure Kotlin apart from the scheduler. No Android, no radio.
  */
 class SimulatedTransport(
-    private val peerCount: Int = 3,
-    private val periodMillis: Long = 2_000L,
+    private val nodeCount: Int = 500,
+    private val scenarioSeconds: Int = 90,
     private val seed: Long = 0x5EED,
 ) : BaseTransport(kind = "Simulated") {
 
@@ -29,20 +36,29 @@ class SimulatedTransport(
     }
     private var task: ScheduledFuture<*>? = null
 
-    private val peers: List<SimPeer> = buildPeers()
-    private var tick = 0L
+    private val rng = Random(seed)
+    private val nodes: List<SimNode> = buildScenario()
+    private var startedAtMillis = 0L
+
+    /** 0f..1f progress through the scenario. */
+    val progress: Float
+        get() {
+            if (startedAtMillis == 0L) return 0f
+            return ((System.currentTimeMillis() - startedAtMillis) / (scenarioSeconds * 1000f))
+                .coerceIn(0f, 1f)
+        }
+
+    /** Current replayed toll (nodes at or past their severe moment). */
+    val toll: Int get() = nodes.count { progress >= it.severeAtT }
 
     override fun start() {
         if (running) return
         running = true
         scanning = true
-        log("simulated transport start — $peerCount peers every ${periodMillis}ms")
-        task = executor.scheduleAtFixedRate(
-            ::emitRound,
-            0L,
-            periodMillis,
-            TimeUnit.MILLISECONDS,
-        )
+        startedAtMillis = System.currentTimeMillis()
+        nodes.forEach { it.nextEmitAtMillis = startedAtMillis + it.startOffsetMillis }
+        log("simulated scenario start — $nodeCount nodes, ${scenarioSeconds}s, scripted CELL_LOSS + T3/T4")
+        task = executor.scheduleAtFixedRate(::pump, 0L, TICK_MS, TimeUnit.MILLISECONDS)
         emitDiagnostics()
     }
 
@@ -53,7 +69,7 @@ class SimulatedTransport(
         running = false
         scanning = false
         advertising = false
-        log("simulated transport stop")
+        log("simulated scenario stop  (toll ${toll}, progress ${(progress * 100).roundToInt()}%)")
         emitDiagnostics()
     }
 
@@ -61,7 +77,6 @@ class SimulatedTransport(
         requirePacketSize(bytes)
         advertisedHex = bytes?.toHex()
         advertising = bytes != null
-        log(if (bytes == null) "advertisement cleared" else "advertising ${bytes.size}B (simulated, not echoed)")
         emitDiagnostics()
     }
 
@@ -70,88 +85,198 @@ class SimulatedTransport(
         executor.shutdownNow()
     }
 
-    private fun emitRound() {
+    private fun pump() {
         try {
-            tick++
-            for (peer in peers) {
-                val bytes = peer.nextPacket(tick)
+            val now = System.currentTimeMillis()
+            val t = progress
+            for (node in nodes) {
+                if (now < node.nextEmitAtMillis) continue
+                node.nextEmitAtMillis = now + node.intervalMillis
+                val bytes = node.emit(t, now) ?: continue // null = scripted silent
                 deliver(
                     InboundPacket(
                         bytes = bytes,
-                        rssi = peer.rssi(tick),
-                        receivedAtMillis = System.currentTimeMillis(),
-                        phy = if (tick % 2 == 0L) PacketPhy.CODED else PacketPhy.ONE_M,
+                        rssi = node.rssi,
+                        receivedAtMillis = now,
+                        phy = if (node.fastBeacon) PacketPhy.CODED else PacketPhy.ONE_M,
                     ),
                 )
             }
-        } catch (t: Throwable) {
-            fail("sim round failed: ${t.message}")
+        } catch (e: Throwable) {
+            fail("sim pump: ${e.message}")
         }
     }
 
-    private fun buildPeers(): List<SimPeer> {
-        val rng = Random(seed)
-        return (0 until peerCount).map { index ->
+    // --- scenario construction ----------------------------------------
+
+    private fun buildScenario(): List<SimNode> {
+        // A handful of cluster centres (villages / structures) around the origin,
+        // in position-delta units (~1.1 m each). ~900 units ≈ 1 km.
+        val clusters = List(CLUSTER_COUNT) {
+            IntArray(2).also { c ->
+                c[0] = rng.nextInt(-900, 900)
+                c[1] = rng.nextInt(-900, 900)
+            }
+        }
+
+        // A dedicated, tightly-packed "doomed building" so the whole of it fits
+        // one grid cell and can go 100% silent -> a clean CELL_LOSS.
+        val doomedCentre = intArrayOf(rng.nextInt(-600, 600), rng.nextInt(-600, 600))
+        val doomedCount = minOf(DOOMED_COUNT, nodeCount / 4)
+
+        val list = ArrayList<SimNode>(nodeCount)
+        repeat(nodeCount) { i ->
+            val doomed = i >= nodeCount - doomedCount
+            val cluster = if (doomed) CLUSTER_COUNT else i % CLUSTER_COUNT
+            val centre = if (doomed) doomedCentre else clusters[cluster]
+            val spread = if (doomed) 30 else SPREAD
             val key = ByteArray(DeviceIdentity.KEY_BYTES) { rng.nextInt().toByte() }
-            SimPeer(
-                identity = DeviceIdentity(key),
-                baseRssi = -55 - index * 12,
-                startBatteryLevel = 12 - index * 3,
-                status = 1 + index % 6,
-                rng = Random(seed xor (index.toLong() + 1)),
+            val identity = DeviceIdentity(key)
+
+            // toll-curve inverse: a node "becomes severe" at the t where the
+            // replayed toll fraction first reaches its draw.
+            val severeAtT = tSuchThatTollFractionReaches(rng.nextDouble())
+
+            // most nodes healthy; a slice on low battery
+            val batteryLevel = if (rng.nextInt(100) < 12) rng.nextInt(1, 3) else rng.nextInt(7, 16)
+
+            list += SimNode(
+                identity = identity,
+                deltaLat = (centre[0] + gaussian(spread)).coerceIn(-32000, 32000),
+                deltaLon = (centre[1] + gaussian(spread)).coerceIn(-32000, 32000),
+                cluster = cluster,
+                severeAtT = severeAtT,
+                baseSeverity = rng.nextInt(0, 4),
+                severeSeverity = rng.nextInt(9, 16),
+                batteryLevel = batteryLevel,
+                rssi = -50 - rng.nextInt(45),
+                fastBeacon = false,
+                intervalMillis = rng.nextLong(20_000, 40_000),
+                silentAtT = null,
+                startOffsetMillis = rng.nextLong(0, 3_000),
             )
         }
+
+        scriptEvents(list)
+        return list
     }
 
-    /** One synthetic device. Battery drains slowly; altitude drifts; status is fixed. */
-    private class SimPeer(
-        private val identity: DeviceIdentity,
-        private val baseRssi: Int,
-        startBatteryLevel: Int,
-        private val status: Int,
-        private val rng: Random,
-    ) {
-        private var batteryLevel = startBatteryLevel.coerceIn(0, 15)
-        private var altDelta = 0
+    private fun scriptEvents(nodes: MutableList<SimNode>) {
+        // 1. the whole doomed building goes dark within a few seconds -> CELL_LOSS.
+        //    It is its own tight cluster, so the cell reads 100% silent.
+        val doomed = nodes.filter { it.cluster == CLUSTER_COUNT }
+        doomed.forEach {
+            it.fastBeacon = true
+            it.intervalMillis = 2_000
+            it.batteryLevel = it.batteryLevel.coerceIn(6, 15) // not "expected" — this is a collapse
+            it.silentAtT = (0.62 + rng.nextDouble() * 0.05)    // ~5 s window mid-scenario
+        }
 
-        /**
-         * A real device re-broadcasts the *same* heartbeat until something
-         * changes, so the store dedups it. Mirror that: hold the packet steady
-         * (the minute stamp only advances once a minute) and only shift battery /
-         * altitude every ~10 ticks.
-         */
-        fun nextPacket(tick: Long): ByteArray {
-            if (tick % 10 == 0L) {
-                if (batteryLevel > 0 && tick % 40 == 0L) batteryLevel--
-                altDelta = (altDelta + rng.nextInt(-1, 2)).coerceIn(-20, 20)
+        // 2. a lone node elsewhere, healthy battery, goes dark -> UNEXPECTED_SILENCE (T3)
+        nodes.first { it.cluster != CLUSTER_COUNT && it.batteryLevel >= 10 }.apply {
+            fastBeacon = true
+            intervalMillis = 2_000
+            batteryLevel = 12
+            silentAtT = 0.35
+        }
+
+        // 3. a lone node elsewhere, critical battery, goes dark -> EXPECTED_SILENCE (T4)
+        nodes.first { it.cluster != CLUSTER_COUNT && it.silentAtT == null }.apply {
+            fastBeacon = true
+            intervalMillis = 2_000
+            batteryLevel = 1
+            silentAtT = 0.42
+        }
+    }
+
+    private fun gaussian(scale: Int): Int =
+        ((rng.nextDouble() + rng.nextDouble() + rng.nextDouble() - 1.5) * scale).roundToInt()
+
+    class SimNode(
+        private val identity: DeviceIdentity,
+        val deltaLat: Int,
+        val deltaLon: Int,
+        val cluster: Int,
+        val severeAtT: Double,
+        private val baseSeverity: Int,
+        private val severeSeverity: Int,
+        var batteryLevel: Int,
+        val rssi: Int,
+        var fastBeacon: Boolean,
+        var intervalMillis: Long,
+        var silentAtT: Double?,
+        val startOffsetMillis: Long,
+    ) {
+        var nextEmitAtMillis: Long = 0L
+
+        fun emit(t: Float, nowMillis: Long): ByteArray? {
+            silentAtT?.let { if (t >= it) return null }
+
+            val severe = t >= severeAtT
+            val severity = if (severe) severeSeverity else baseSeverity
+            val status = when {
+                batteryLevel <= 1 -> Status.UNKNOWN.code
+                severe && severity >= 12 -> Status.TRAPPED_DEBRIS.code
+                severe -> Status.INJURED.code
+                else -> Status.UNKNOWN.code
             }
+            val nextTx = if (fastBeacon) 2 else (intervalMillis / 1000).toInt()
 
             val packet = Packet(
                 version = Packet.PROTOCOL_VERSION,
                 type = Packet.TYPE_STATUS,
                 deviceId = identity.deviceId,
-                deltaLat = 200 + (identity.deviceId[0].toInt() and 0x3F),
-                deltaLon = -150 + (identity.deviceId[1].toInt() and 0x3F),
+                deltaLat = deltaLat,
+                deltaLon = deltaLon,
                 status = status,
-                severity = 4 + (identity.deviceId[2].toInt() and 0x07),
-                casualties = identity.deviceId[3].toInt() and 0x03,
-                timestampMinutes = EventClock.stampMinutes(System.currentTimeMillis()),
-                batteryLevel = batteryLevel,
+                severity = severity,
+                casualties = if (severe) (severity - 8).coerceIn(0, 15) else 0,
+                timestampMinutes = EventClock.stampMinutes(nowMillis),
+                batteryLevel = batteryLevel.coerceIn(0, 15),
                 hopCount = 0,
-                nextExpectedTxSeconds = ladder(batteryLevel),
-                altDelta = altDelta,
+                nextExpectedTxSeconds = nextTx.coerceAtLeast(1),
+                altDelta = Packet.NO_BAROMETER,
                 altTrend = 0,
             )
             return PacketCodec.encode(packet, identity)
         }
+    }
 
-        fun rssi(tick: Long): Int = baseRssi + ((tick % 7) - 3).toInt()
+    companion object {
+        private const val TICK_MS = 400L
+        private const val CLUSTER_COUNT = 9
+        private const val SPREAD = 70 // ~75 m gaussian spread within a cluster
+        private const val DOOMED_COUNT = 12
 
-        private fun ladder(level: Int): Int = when {
-            level > 9 -> 1
-            level > 4 -> 10
-            level > 1 -> 60
-            else -> 300
+        /**
+         * Real Rasuwagadhi toll over 72 h, as a fraction of the final 626,
+         * against normalised scenario time. Piecewise-linear, monotonic.
+         */
+        private val TOLL_KEYFRAMES = listOf(
+            0.00 to 22.0 / 626,
+            0.33 to 95.0 / 626,
+            0.66 to 469.0 / 626,
+            1.00 to 626.0 / 626,
+        )
+
+        fun tollFraction(t: Double): Double {
+            val tt = t.coerceIn(0.0, 1.0)
+            for (i in 1 until TOLL_KEYFRAMES.size) {
+                val (t0, f0) = TOLL_KEYFRAMES[i - 1]
+                val (t1, f1) = TOLL_KEYFRAMES[i]
+                if (tt <= t1) return f0 + (f1 - f0) * ((tt - t0) / (t1 - t0))
+            }
+            return 1.0
+        }
+
+        private fun tSuchThatTollFractionReaches(fraction: Double): Double {
+            val f = fraction.coerceIn(0.0, 1.0)
+            for (i in 1 until TOLL_KEYFRAMES.size) {
+                val (t0, f0) = TOLL_KEYFRAMES[i - 1]
+                val (t1, f1) = TOLL_KEYFRAMES[i]
+                if (f <= f1) return t0 + (t1 - t0) * ((f - f0) / (f1 - f0)).coerceIn(0.0, 1.0)
+            }
+            return 1.0
         }
     }
 }

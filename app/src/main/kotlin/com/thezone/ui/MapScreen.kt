@@ -84,8 +84,15 @@ fun MapScreen() {
             .padding(16.dp),
     ) {
         Text("Severity map", color = Zone.bone, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        val scenario = TransportController.simScenario
         Text(
-            "${cells.size} cells active · ${losses.size} collapsed",
+            buildString {
+                append("${cells.size} cells · ${losses.size} collapsed")
+                if (scenario != null) {
+                    append("  ·  toll ${scenario.second}")
+                    append("  ·  ${(scenario.first * 100).toInt()}%")
+                }
+            },
             color = Zone.boneDim,
             fontSize = 13.sp,
         )
@@ -154,11 +161,12 @@ private fun MapGrid(
 
                 if (loss != null) {
                     drawLabel(
-                        "${loss.deviceCount}d  ${clock(loss.lastSilentAtMillis)}",
+                        "${loss.deviceCount} dark",
+                        clock(loss.lastSilentAtMillis),
                         topLeft, cellSize, Zone.bone,
                     )
                 } else if (state != null) {
-                    drawLabel("${state.devices}", topLeft, cellSize, Zone.ink)
+                    drawLabel("${state.devices}", null, topLeft, cellSize, Zone.ink)
                 }
             }
         }
@@ -244,24 +252,28 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCellLoss(
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabel(
     text: String,
+    subText: String?,
     topLeft: Offset,
     size: Size,
     color: Color,
 ) {
     drawContext.canvas.nativeCanvas.apply {
+        val ts = minOf(size.width, size.height) * (if (subText == null) 0.26f else 0.18f)
         val paint = android.graphics.Paint().apply {
             this.color = color.toArgb()
-            textSize = minOf(size.width, size.height) * 0.22f
+            textSize = ts
             isAntiAlias = true
             typeface = android.graphics.Typeface.MONOSPACE
             textAlign = android.graphics.Paint.Align.CENTER
         }
-        drawText(
-            text,
-            topLeft.x + size.width / 2,
-            topLeft.y + size.height / 2 + paint.textSize / 3,
-            paint,
-        )
+        val cx = topLeft.x + size.width / 2
+        val cy = topLeft.y + size.height / 2
+        if (subText == null) {
+            drawText(text, cx, cy + ts / 3, paint)
+        } else {
+            drawText(text, cx, cy - ts * 0.15f, paint)
+            drawText(subText, cx, cy + ts * 1.1f, paint)
+        }
     }
 }
 
@@ -290,7 +302,6 @@ private fun fallbackCell(deviceIdHex: String): GridCell {
     return GridCell(((h ushr 8) and 0x3) - 1, (h and 0x3) - 1)
 }
 
-private fun clock(millis: Long): String {
-    val s = millis / 1000
-    return "%02d:%02d".format((s / 3600) % 24, (s / 60) % 60)
-}
+private val hhmm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+
+private fun clock(millis: Long): String = hhmm.format(java.util.Date(millis))

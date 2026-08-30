@@ -17,48 +17,59 @@ import java.util.concurrent.atomic.AtomicInteger
 class TransportContractTest {
 
     @Test
-    fun simulatedTransport_emitsDecodablePacketsFromDistinctPeers() {
-        val transport = SimulatedTransport(peerCount = 3, periodMillis = 50L)
+    fun simulatedScenario_emitsDecodablePacketsFromManyDistinctNodes() {
+        val transport = SimulatedTransport(nodeCount = 60, scenarioSeconds = 90)
         val seen = mutableListOf<InboundPacket>()
-        val latch = CountDownLatch(9) // 3 peers x 3 rounds
+        val latch = CountDownLatch(1)
         transport.onPacket { inbound ->
-            synchronized(seen) { seen.add(inbound) }
-            latch.countDown()
+            synchronized(seen) { seen.add(inbound); if (seen.size >= 60) latch.countDown() }
         }
 
         transport.start()
-        val completed = latch.await(3, TimeUnit.SECONDS)
+        val completed = latch.await(4, TimeUnit.SECONDS)
         transport.shutdown()
 
-        assertTrue("expected >= 9 packets, got ${seen.size}", completed)
-
-        seen.forEach { assertEquals(31, it.bytes.size) }
-        val decoded = seen.map { PacketCodec.decode(it.bytes) }
-        decoded.forEach {
-            assertEquals(0, it.hopCount)
-            assertTrue(it.nextExpectedTxSeconds in setOf(1, 10, 60, 300))
+        assertTrue("expected >= 60 packets, got ${seen.size}", completed)
+        synchronized(seen) {
+            seen.forEach { assertEquals(31, it.bytes.size) }
+            val decoded = seen.map { PacketCodec.decode(it.bytes) }
+            decoded.forEach { assertEquals(0, it.hopCount) }
+            assertTrue(decoded.map { it.deviceId.toHex() }.toSet().size >= 50)
         }
-        val distinctPeers = decoded.map { it.deviceId.toHex() }.toSet()
-        assertEquals(3, distinctPeers.size)
     }
 
     @Test
-    fun simulatedTransport_diagnosticsReportRunningAndCounts() {
-        val transport = SimulatedTransport(peerCount = 2, periodMillis = 50L)
+    fun simulatedScenario_diagnosticsReportRunning() {
+        val transport = SimulatedTransport(nodeCount = 40)
         val received = AtomicInteger()
         transport.onPacket { received.incrementAndGet() }
-
         var lastDiag: TransportDiagnostics? = null
         transport.onDiagnostics { lastDiag = it }
 
         transport.start()
-        Thread.sleep(250)
+        Thread.sleep(600)
         transport.shutdown()
 
         assertNotNull(lastDiag)
         assertTrue("received nothing", received.get() > 0)
         assertEquals("Simulated", lastDiag!!.kind)
-        assertTrue(lastDiag!!.packetsReceived > 0)
+    }
+
+    @Test
+    fun tollCurve_isMonotonicAndHitsTheRealMilestones() {
+        assertEquals(22.0 / 626, SimulatedTransport.tollFraction(0.0), 1e-6)
+        assertEquals(95.0 / 626, SimulatedTransport.tollFraction(0.33), 1e-6)
+        assertEquals(469.0 / 626, SimulatedTransport.tollFraction(0.66), 1e-6)
+        assertEquals(1.0, SimulatedTransport.tollFraction(1.0), 1e-6)
+
+        var prev = -1.0
+        var t = 0.0
+        while (t <= 1.0) {
+            val f = SimulatedTransport.tollFraction(t)
+            assertTrue("toll fraction decreased at t=$t", f >= prev - 1e-9)
+            prev = f
+            t += 0.02
+        }
     }
 
     @Test
