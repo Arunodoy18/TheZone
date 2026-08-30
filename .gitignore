@@ -8,3 +8,6 @@
 .externalNativeBuild
 .cxx
 /app/build/
+
+# local APK exports (pwa/zone.apk is the tracked one)
+/dist/
