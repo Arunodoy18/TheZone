@@ -3,10 +3,16 @@ package com.thezone.transport
 import android.content.Context
 import android.util.Log
 import com.thezone.core.AcceptOutcome
+import com.thezone.core.CellLoss
+import com.thezone.core.DeviceSilence
 import com.thezone.core.ReportStore
+import com.thezone.core.SilenceEvaluator
+import com.thezone.core.SilenceState
+import com.thezone.core.SilenceTransition
 import com.thezone.core.StoredReport
 import com.thezone.demo.HeartbeatSource
 import com.thezone.identity.DeviceKeyStore
+import com.thezone.packet.PacketCodec
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -27,6 +33,7 @@ object TransportController {
     private val lock = Any()
     private var transport: ReportTransport? = null
     private val store = ReportStore()
+    private val silence = SilenceEvaluator()
 
     private val pump = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "relay-pump").apply { isDaemon = true }
@@ -49,6 +56,11 @@ object TransportController {
     /** The content-addressed store, newest activity first. */
     val reports: List<StoredReport>
         get() = store.all().sortedByDescending { it.lastHeardAtMillis }
+
+    /** Dead Man's Packet — per-device silence state, the transition log, cell losses. */
+    val silenceDevices: List<DeviceSilence> get() = silence.snapshot()
+    val silenceTransitions: List<SilenceTransition> get() = silence.transitions()
+    val cellLosses: List<CellLoss> get() = silence.cellLosses()
 
     /** Legacy view kept for the debug list — one row per stored report. */
     val received: List<ReceivedRow>
@@ -106,6 +118,7 @@ object TransportController {
 
     fun clearReceived() {
         store.clear()
+        silence.clear()
         ping()
     }
 
@@ -133,13 +146,18 @@ object TransportController {
 
     private fun ingest(inbound: InboundPacket) {
         val outcome = store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
-        if (outcome == AcceptOutcome.NEW || outcome == AcceptOutcome.UPDATED) {
-            val dev = runCatching { com.thezone.packet.PacketCodec.decode(inbound.bytes).deviceId.toHex() }
-                .getOrNull() ?: "??"
-            Log.d(
-                "TheZone",
-                "$outcome ${inbound.bytes.toHex()} rssi=${inbound.rssi} phy=${inbound.phy} dev=$dev",
-            )
+        val packet = runCatching { PacketCodec.decode(inbound.bytes) }.getOrNull()
+        if (packet != null) {
+            val dev = packet.deviceId.toHex()
+            if (dev != store.ownDeviceIdHex) {
+                silence.onPacket(dev, packet, inbound.receivedAtMillis)
+            }
+            if (outcome == AcceptOutcome.NEW || outcome == AcceptOutcome.UPDATED) {
+                Log.d(
+                    "TheZone",
+                    "$outcome ${inbound.bytes.toHex()} rssi=${inbound.rssi} phy=${inbound.phy} dev=$dev",
+                )
+            }
         }
         ping()
     }
@@ -157,8 +175,38 @@ object TransportController {
         val ctx = appContext ?: return
         try {
             pumpTick++
+
+            // Dead Man's Packet: reclassify, and mirror every transition + cell
+            // loss to logcat (adb logcat -s TheZone) for the demo.
+            val result = silence.tick()
+            result.transitions.forEach {
+                Log.d(
+                    "TheZone",
+                    "SILENCE ${it.deviceIdHex} ${it.from}->${it.to} @${it.atMillis} " +
+                        "since=${it.sinceLastHeardMillis}ms promised=${it.promisedNextTxSeconds}s bat=${it.batteryPercent}%",
+                )
+            }
+            result.newCellLosses.forEach {
+                Log.w(
+                    "TheZone",
+                    "CELL_LOSS cell=${it.cell} ${it.silentCount}/${it.deviceCount} silent, " +
+                        "first@${it.firstSilentAtMillis} last@${it.lastSilentAtMillis}",
+                )
+            }
+
+            // Don't relay heartbeats for devices we locally believe are silent —
+            // that would keep a dead device looking alive downstream.
             val carried =
-                if (pumpTick % RELAY_EVERY_N_TICKS == 0L) store.relayBatch(1) else emptyList()
+                if (pumpTick % RELAY_EVERY_N_TICKS == 0L) {
+                    store.relayBatch(1) { dev ->
+                        when (silence.deviceState(dev)) {
+                            SilenceState.EXPECTED_SILENCE, SilenceState.UNEXPECTED_SILENCE -> false
+                            else -> true
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
             val bytes = carried.firstOrNull() ?: runCatching { HeartbeatSource.current(ctx) }
                 .onSuccess { store.accept(it, rssiDbm = 0) }
                 .getOrNull()

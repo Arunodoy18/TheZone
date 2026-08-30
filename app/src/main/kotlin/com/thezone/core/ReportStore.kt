@@ -132,11 +132,19 @@ class ReportStore(
      * (rule 5). Excludes this device's own reports and anything already at the
      * hop ceiling (rule 4).
      */
-    fun relayBatch(max: Int): List<ByteArray> {
+    fun relayBatch(
+        max: Int,
+        /** Optional gate by sender device_id hex — e.g. skip devices believed silent. */
+        includeDevice: (String) -> Boolean = { true },
+    ): List<ByteArray> {
         if (max <= 0) return emptyList()
         synchronized(lock) {
             val candidates = byId.values
-                .filter { !it.isOwn && it.receivedHopCount < Packet.MAX_HOPS }
+                .filter {
+                    !it.isOwn &&
+                        it.receivedHopCount < Packet.MAX_HOPS &&
+                        includeDevice(it.packet.deviceId.toHexLower())
+                }
                 .sortedBy { it.contentId } // deterministic order for a stable cursor
             if (candidates.isEmpty()) return emptyList()
 

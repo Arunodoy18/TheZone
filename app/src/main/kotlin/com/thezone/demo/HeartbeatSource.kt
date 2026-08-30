@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.BatteryManager
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.BatteryScale
+import com.thezone.packet.EventClock
 import com.thezone.packet.Packet
 import com.thezone.packet.PacketCodec
 
@@ -18,9 +19,10 @@ import com.thezone.packet.PacketCodec
  */
 object HeartbeatSource {
 
-    fun current(context: Context): ByteArray {
+    fun current(context: Context, nowMillis: Long = System.currentTimeMillis()): ByteArray {
         val identity = DeviceKeyStore.identity(context)
-        val batteryPercent = readBatteryPercent(context)
+        val batteryPercent =
+            com.thezone.demo.DebugOverrides.batteryPercentOverride ?: readBatteryPercent(context)
         val batteryLevel = BatteryScale.percentToNibble(batteryPercent)
 
         val packet = Packet(
@@ -29,10 +31,10 @@ object HeartbeatSource {
             deviceId = identity.deviceId,
             deltaLat = Packet.NO_FIX,
             deltaLon = Packet.NO_FIX,
-            status = 0, // UNKNOWN — H4 fills this in
+            status = 0, // UNKNOWN — a later phase sets sensor-derived status
             severity = 0,
             casualties = 0,
-            timestampMinutes = 0, // event epoch not established until H4
+            timestampMinutes = EventClock.stampMinutes(nowMillis),
             batteryLevel = batteryLevel,
             hopCount = 0,
             nextExpectedTxSeconds = ladderSeconds(batteryPercent),

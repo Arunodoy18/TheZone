@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.thezone.core.SilenceState
+import com.thezone.demo.DebugOverrides
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
@@ -140,6 +142,22 @@ fun TransportDebugScreen() {
             }
         }
 
+        Header("Battery override (fake the ladder)")
+        var battOverride by remember { mutableStateOf(DebugOverrides.batteryPercentOverride) }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf<Int?>(90, 55, 25, 8, null).forEach { pct ->
+                FilterChip(
+                    selected = battOverride == pct,
+                    onClick = {
+                        battOverride = pct
+                        DebugOverrides.batteryPercentOverride = pct
+                        TransportController.refreshHeartbeat(context)
+                    },
+                    label = { Text(pct?.let { "$it%" } ?: "auto") },
+                )
+            }
+        }
+
         val ble = TransportController.bleTransport()
         if (ble != null) {
             Header("BLE debug switches")
@@ -213,11 +231,58 @@ fun TransportDebugScreen() {
             Text(row.rawHex, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
         }
 
+        val cellLosses = TransportController.cellLosses
+        val silenceDevices = TransportController.silenceDevices
+        val transitions = TransportController.silenceTransitions
+
+        Header("Dead Man's Packet")
+        cellLosses.forEach { loss ->
+            Text(
+                "CELL_LOSS  cell(${loss.cell.latIndex},${loss.cell.lonIndex})  " +
+                    "${loss.silentCount}/${loss.deviceCount} devices, all silent by ${clockOf(loss.lastSilentAtMillis)}",
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+            )
+        }
+        if (silenceDevices.isEmpty()) {
+            Text("No peers tracked yet.", fontSize = 12.sp)
+        }
+        silenceDevices.sortedBy { it.state.ordinal }.forEach { d ->
+            Text(
+                "dev ${d.deviceIdHex.take(12)}  ${d.state}  " +
+                    "heard ${ageSeconds(d.lastHeardAtMillis)}s ago  promised ${d.promisedNextTxSeconds}s  " +
+                    "bat ${d.lastBatteryPercent}%  misses ${d.consecutiveMisses}",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = when (d.state) {
+                    SilenceState.UNEXPECTED_SILENCE -> MaterialTheme.colorScheme.error
+                    SilenceState.ALIVE -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        if (transitions.isNotEmpty()) {
+            Text("transitions:", fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp))
+            transitions.takeLast(12).asReversed().forEach {
+                Text(
+                    "${clockOf(it.atMillis)}  ${it.deviceIdHex.take(12)}  ${it.from}→${it.to}",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                )
+            }
+        }
+
         Header("Transport log")
         diagnostics.log.asReversed().forEach {
             Text(it, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
         }
     }
+}
+
+private fun clockOf(millis: Long): String {
+    val s = millis / 1000
+    return "%02d:%02d:%02d".format((s / 3600) % 24, (s / 60) % 60, s % 60)
 }
 
 private fun phyLabel(coded: Boolean, oneM: Boolean, legacy: Boolean): String = buildList {
