@@ -150,11 +150,17 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
     transportTick()
     val entry = TransportController.triageEntries().firstOrNull { it.deviceIdHex == deviceIdHex }
     val rssi = entry?.lastRssiDbm ?: -100
+    val heardAgoMs = entry?.let { System.currentTimeMillis() - it.lastHeardAtMillis } ?: Long.MAX_VALUE
 
     // -95 dBm ≈ empty, -45 dBm ≈ full; smoothed by the animation.
     val rawFill = ((rssi + 95f) / 50f).coerceIn(0f, 1f)
     val fill by animateFloatAsState(rawFill, label = "dig-fill")
     val metres = estimateMetres(rssi)
+    val (linkText, linkColor) = when {
+        heardAgoMs < 3_000 -> "LINK OK" to Zone.calm
+        heardAgoMs < 10_000 -> "MARGINAL" to Zone.amber
+        else -> "LINK LOST" to Zone.alarm
+    }
 
     Column(
         modifier = Modifier
@@ -183,6 +189,11 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
             modifier = Modifier.padding(top = 8.dp),
         )
         Text("≈ $metres m   ·   $rssi dBm", color = Zone.paperInk, fontSize = 16.sp)
+        Text(
+            "$linkText   ·   heard ${(heardAgoMs / 1000).coerceAtMost(999)}s ago",
+            color = linkColor, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 4.dp),
+        )
 
         Spacer(Modifier.height(20.dp))
         Box(
