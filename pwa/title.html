@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zone — title card</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --ink:#070a0d; --ink-line:#223038;
+    --bone:#ede8da; --bone-dim:#7c8792; --bone-faint:#49555f;
+    --signal:#1be7c4;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--ink);color:var(--bone);
+    font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    display:grid;place-items:center;overflow:hidden;
+  }
+
+  .stage{position:relative;width:100%;height:100%;display:grid;place-items:center}
+
+  /* sonar sweep + range rings, behind everything */
+  .fx{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .sweep{
+    position:absolute;left:50%;top:50%;width:170vmax;height:170vmax;
+    transform:translate(-50%,-50%);
+    background:conic-gradient(from 0deg,
+      transparent 0deg,
+      rgba(27,231,196,.10) 22deg,
+      rgba(27,231,196,.02) 40deg,
+      transparent 52deg);
+    animation:spin 9s linear infinite;
+  }
+  .ring{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    border:1px solid var(--ink-line);border-radius:50%;
+  }
+  .ring.r1{width:34vmin;height:34vmin}
+  .ring.r2{width:60vmin;height:60vmin}
+  .ring.r3{width:88vmin;height:88vmin}
+  .ring.r4{width:120vmin;height:120vmin;border-color:#18242b}
+  .ping{
+    position:absolute;left:50%;top:50%;width:20vmin;height:20vmin;
+    transform:translate(-50%,-50%) scale(.2);
+    border:2px solid rgba(27,231,196,.5);border-radius:50%;
+    animation:ping 4.4s cubic-bezier(.2,.6,.3,1) infinite;
+  }
+
+  @keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  @keyframes ping{
+    0%{transform:translate(-50%,-50%) scale(.15);opacity:.55}
+    70%{opacity:0}
+    100%{transform:translate(-50%,-50%) scale(3.4);opacity:0}
+  }
+
+  .content{position:relative;text-align:center;padding:0 6vw}
+  .eyebrow{
+    font:600 clamp(10px,1.5vw,13px)/1 var(--mono);
+    letter-spacing:.28em;text-transform:uppercase;color:var(--bone-dim);
+  }
+  h1{
+    font:700 clamp(52px,13vw,150px)/.95 var(--sans);
+    letter-spacing:-.02em;margin:.18em 0 0;
+  }
+  h1 .dot{color:var(--signal)}
+  .tag{
+    font:500 clamp(15px,2.6vw,26px)/1.4 var(--sans);
+    color:var(--bone);margin:.7em auto 0;max-width:22ch;text-wrap:balance;
+  }
+  .tag em{color:var(--signal);font-style:normal}
+
+  .strip{
+    position:absolute;left:0;right:0;bottom:5vh;text-align:center;
+    font:500 clamp(9px,1.4vw,12px)/1 var(--mono);
+    letter-spacing:.22em;text-transform:uppercase;color:var(--bone-faint);
+  }
+  .strip span{margin:0 .9em;white-space:nowrap}
+  .strip b{color:var(--bone-dim);font-weight:600}
+
+  @media (prefers-reduced-motion:reduce){
+    .sweep,.ping{animation:none}
+    .ping{opacity:.15;transform:translate(-50%,-50%) scale(2)}
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="fx" aria-hidden="true">
+    <div class="sweep"></div>
+    <div class="ring r1"></div><div class="ring r2"></div>
+    <div class="ring r3"></div><div class="ring r4"></div>
+    <div class="ping"></div>
+  </div>
+
+  <div class="content">
+    <div class="eyebrow">Ground-Zero Communication Blackout · Information Fog</div>
+    <h1>Zone<span class="dot">.</span></h1>
+    <p class="tag">The network that works when <em>every network is gone</em>.</p>
+  </div>
+
+  <div class="strip" aria-hidden="true">
+    <span><b>Offline</b></span>·<span><b>No servers</b></span>·<span><b>31 bytes</b></span>·<span><b>Airplane-mode native</b></span>
+  </div>
+</div>
+</body>
+</html>
