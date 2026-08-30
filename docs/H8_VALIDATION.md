@@ -1,5 +1,32 @@
 # H8 — three-phone validation
 
+## Results — 2026-08-30 (S23 P1 / Realme 7 P2 / Motorola Edge 50 Pro P3)
+
+| Test | Result | Note |
+|---|---|---|
+| T1 direct link | **PASS** | Motorola heard S23 + Realme, `1 hop`, LIVE |
+| Coded-PHY rx (H2 carry-over) | **PASS** | `rxByPhy={CODED, ONE_M}` on the Motorola — closed |
+| T2 store-carry-forward | **PASS** | S23 Bluetooth OFF; its `TRAPPED` signal reached the Motorola at `2 hop`, LIVE, rebroadcast by the Realme |
+| T3 unexpected silence | **PASS** | S23 at 55% override (declares 10 s), powered off → row went red **SILENT** |
+| T4 expected silence | **PASS** | S23 at 8% override (declares 300 s), powered off → row went grey **EXPECTED**, no escalation |
+| T5 barometer | **PASS (borderline)** | one floor read **+2 m** (spec is ~±1 m of real height; EMA lag / low ceiling). Sign + magnitude correct; basement/rooftop separation solid |
+| T6 drowning escalation | **PASS** | "Water rising" + climbing → S23 jumped to top of the list, reason "rising water, climbing" |
+| T7 Dig Here | **PASS** | proximity bar tracks toward / away |
+| T8 cell loss | deferred — already verified in H7 on the Realme (screenshot: hatched "12 dark" hole) |
+| T9 sustained 30-min run | deferred |
+| Range survey | not yet measured — do before staging |
+
+**The product is validated on three real phones.** Remaining: T9 soak, and the
+range survey (needed to set the demo walking distance).
+
+Field notes:
+- Turning Location on requires an app restart for the scan to pick it up.
+- BLE (esp. Coded PHY) reaches through interior walls — for a clean "out of
+  range" you need a floor gap, outside distance, or the source's Bluetooth off.
+- adb over USB was flaky on the Motorola all session; read results off the screen.
+
+---
+
 Field checklist. Run it in the actual room if you can, **airplane mode on**, on
 the three phones from the H0 probe:
 
