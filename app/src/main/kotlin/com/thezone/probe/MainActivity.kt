@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,7 @@ import com.thezone.mode.ModeStore
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
 import com.thezone.ui.CitizenScreen
+import com.thezone.ui.LandingScreen
 import com.thezone.ui.MapScreen
 import com.thezone.ui.ProbeScreen
 import com.thezone.ui.ResponderScreen
@@ -80,6 +82,13 @@ private fun Root() {
     var mode by remember { mutableStateOf(ModeStore.get(context)) }
     var showSwitcher by remember { mutableStateOf(false) }
     var showDebug by remember { mutableStateOf(false) }
+    // shown on every cold start; survives rotation but not the task being cleared
+    var showLanding by rememberSaveable { mutableStateOf(true) }
+
+    if (showLanding) {
+        LandingScreen(onEnter = { showLanding = false })
+        return
+    }
 
     if (showDebug) {
         Box(Modifier.fillMaxSize()) {
