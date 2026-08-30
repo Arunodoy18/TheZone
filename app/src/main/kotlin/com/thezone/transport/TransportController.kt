@@ -2,7 +2,9 @@ package com.thezone.transport
 
 import android.content.Context
 import android.util.Log
+import com.thezone.core.CellConfidence
 import com.thezone.core.CellLoss
+import com.thezone.core.CorroborationScorer
 import com.thezone.core.DeviceSilence
 import com.thezone.core.ReportStore
 import com.thezone.core.SilenceEvaluator
@@ -59,6 +61,12 @@ object TransportController {
     /** The content-addressed store, newest activity first. */
     val reports: List<StoredReport>
         get() = store.all().sortedByDescending { it.lastHeardAtMillis }
+
+    /** Confidence-scored severity per cell (PS5) — trust the picture, don't just colour it. */
+    val cellConfidence: List<CellConfidence> get() = CorroborationScorer.scoreCells(store.all())
+
+    /** True when a confirmed collapse is inside this device's radio horizon. */
+    val nearDamage: Boolean get() = com.thezone.demo.NetworkAlert.nearDamage
 
     /** Dead Man's Packet — per-device silence state, the transition log, cell losses. */
     val silenceDevices: List<DeviceSilence> get() = silence.snapshot()
@@ -214,6 +222,32 @@ object TransportController {
         val ctx = appContext ?: return
         try {
             pumpTick++
+
+            // Proximity to damage: a collapse whose devices I heard directly
+            // (hop <= 1) is inside my radio horizon. Every remaining node near
+            // the damage leans in.
+            val losses = silence.cellLosses()
+            com.thezone.demo.NetworkAlert.nearDamage = losses.isNotEmpty() &&
+                store.all().any { r ->
+                    !r.isOwn && r.receivedHopCount <= 1 &&
+                        (com.thezone.core.GridCells.of(r.packet.deltaLat, r.packet.deltaLon)
+                            ?: com.thezone.core.GridCells.fallback(r.packet.deviceId.toHex()))
+                            .let { cell -> losses.any { it.cell == cell } }
+                }
+
+            // Battery drives the PHY ladder (CLAUDE.md duty cycle): Coded > 60%,
+            // alternate 30–60%, 1M-only below — Coded's S=8 airtime fights
+            // survival mode, so we drop it as the battery falls. A confirmed
+            // collapse nearby overrides the ladder and pins Coded for reach.
+            bleTransport()?.let { ble ->
+                val pct = HeartbeatSource.effectiveBatteryPercent(ctx)
+                ble.phyPolicy = when {
+                    com.thezone.demo.NetworkAlert.nearDamage -> BleTransport.PhyPolicy.CODED_ONLY
+                    pct > 60 -> BleTransport.PhyPolicy.CODED_ONLY
+                    pct >= 30 -> BleTransport.PhyPolicy.ALTERNATE
+                    else -> BleTransport.PhyPolicy.ONE_M_ONLY
+                }
+            }
 
             // Dead Man's Packet: reclassify, and mirror every transition + cell
             // loss to logcat (adb logcat -s TheZone) for the demo.

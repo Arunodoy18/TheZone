@@ -56,6 +56,7 @@ import com.thezone.ui.theme.Zone
  * event so you can watch the hole open.
  */
 private class CellState(var devices: Int = 0, var severitySum: Int = 0, var silent: Int = 0) {
+    var confidence: Double = 1.0
     val avgSeverity: Int get() = if (devices == 0) 0 else severitySum / devices
 }
 
@@ -75,6 +76,8 @@ fun MapScreen() {
     val live = scrub >= 0.999f || tMax <= tMin
     val tAt = if (live) tMax else (tMin + (scrub.toDouble() * (tMax - tMin)).toLong())
 
+    val confByCell = TransportController.cellConfidence.associateBy { it.cell }
+
     val cells = HashMap<GridCell, CellState>()
     reports.filterNot { it.isOwn }.forEach { r ->
         if (!live && r.firstHeardAtMillis > tAt) return@forEach
@@ -83,6 +86,7 @@ fun MapScreen() {
         val st = cells.getOrPut(cell) { CellState() }
         st.devices++
         st.severitySum += r.packet.severity
+        st.confidence = confByCell[cell]?.confidence ?: 1.0
     }
     // fold silence state in (live only — historical per-device state isn't reconstructed)
     if (live) {
@@ -116,6 +120,12 @@ fun MapScreen() {
             },
             color = Zone.boneDim, fontSize = 14.sp,
         )
+        if (TransportController.nearDamage) {
+            Text(
+                "NETWORK ALERT — nearby nodes pinned to max reach",
+                color = Zone.alarm, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            )
+        }
         Spacer(Modifier.height(12.dp))
 
         Box(
@@ -190,7 +200,18 @@ private fun DrawScope.drawEmptyCell(tl: Offset, sz: Size) {
 }
 
 private fun DrawScope.drawActiveCell(tl: Offset, sz: Size, st: CellState) {
-    drawRoundRect(Zone.severity(st.avgSeverity).copy(alpha = 0.9f), tl, sz, CornerRadius(6f))
+    // confidence drives opacity — a lone unconfirmed report is a ghost, not an alarm
+    val a = (0.28f + 0.62f * st.confidence.toFloat()).coerceIn(0.28f, 0.9f)
+    drawRoundRect(Zone.severity(st.avgSeverity).copy(alpha = a), tl, sz, CornerRadius(6f))
+    if (st.confidence < 0.4) {
+        // dashed outline = "unconfirmed"
+        var d = 0f
+        while (d < sz.width) {
+            drawLine(Zone.boneDim, Offset(tl.x + d, tl.y), Offset(tl.x + minOf(d + 6f, sz.width), tl.y), strokeWidth = 1.5f)
+            drawLine(Zone.boneDim, Offset(tl.x + d, tl.y + sz.height), Offset(tl.x + minOf(d + 6f, sz.width), tl.y + sz.height), strokeWidth = 1.5f)
+            d += 12f
+        }
+    }
     if (st.silent > 0) drawRoundRect(Zone.alarm, tl, Size(sz.width, 5f))
 }
 
@@ -227,6 +248,7 @@ private fun Legend() {
         LegendItem(Zone.inkLine, "no data")
         LegendItem(Zone.severity(4), "low")
         LegendItem(Zone.severity(14), "high")
+        LegendItem(Zone.severity(14).copy(alpha = 0.3f), "unconfirmed")
         LegendItem(Zone.bone, "collapsed")
     }
 }

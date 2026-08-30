@@ -45,7 +45,10 @@ object HeartbeatSource {
             timestampMinutes = EventClock.stampMinutes(nowMillis),
             batteryLevel = batteryLevel,
             hopCount = 0,
-            nextExpectedTxSeconds = ladderSeconds(batteryPercent),
+            nextExpectedTxSeconds =
+                if (NetworkAlert.nearDamage)
+                    minOf(ladderSeconds(batteryPercent), NetworkAlert.ALERT_INTERVAL_FLOOR_S)
+                else ladderSeconds(batteryPercent),
             altDelta = Altitude.deltaByte,   // NO_BAROMETER when absent — never a false zero
             altTrend = Altitude.trendMeters,
         )
@@ -59,6 +62,10 @@ object HeartbeatSource {
         batteryPercent >= 10 -> 60
         else -> 300
     }
+
+    /** The effective battery % (debug override wins), for the interval + PHY ladders. */
+    fun effectiveBatteryPercent(context: Context): Int =
+        com.thezone.demo.DebugOverrides.batteryPercentOverride ?: readBatteryPercent(context)
 
     private fun readBatteryPercent(context: Context): Int {
         val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager

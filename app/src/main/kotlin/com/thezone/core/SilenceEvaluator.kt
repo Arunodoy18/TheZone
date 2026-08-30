@@ -202,13 +202,8 @@ class SilenceEvaluator(
         return fresh
     }
 
-    private fun cellFor(packet: Packet): GridCell? {
-        if (!packet.hasFix()) return null
-        return GridCell(
-            Math.floorDiv(packet.deltaLat, cellSizeUnits),
-            Math.floorDiv(packet.deltaLon, cellSizeUnits),
-        )
-    }
+    private fun cellFor(packet: Packet): GridCell? =
+        GridCells.of(packet.deltaLat, packet.deltaLon, cellSizeUnits)
 
     private fun missesFor(t: Track, now: Long): Int {
         val promisedMs = t.promisedNextTxSeconds * 1000L

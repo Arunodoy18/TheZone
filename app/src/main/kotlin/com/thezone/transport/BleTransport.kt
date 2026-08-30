@@ -61,6 +61,21 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
      */
     enum class AdvertiseStrategy { ALTERNATING, CONCURRENT }
 
+    /**
+     * Which PHY(s) to spend airtime on, driven by battery (CLAUDE.md duty cycle):
+     * `CODED_ONLY` >60% (max reach while affordable), `ALTERNATE` 30–60%,
+     * `ONE_M_ONLY` <30% (Coded's S=8 airtime fights survival mode).
+     */
+    enum class PhyPolicy { CODED_ONLY, ALTERNATE, ONE_M_ONLY }
+
+    @Volatile
+    var phyPolicy: PhyPolicy = PhyPolicy.ALTERNATE
+        set(value) {
+            if (field == value) return
+            field = value
+            if (running) handler.post { packetBytes?.let { stopAdvertising(); startAdvertising(it) } }
+        }
+
     // Debug switches (BUILD_PLAN H2 troubleshooting order).
     @Volatile var manufacturerFilterEnabled = true
     @Volatile var forceLegacyAdvertising = false
@@ -210,13 +225,22 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
         }
     }
 
-    /** One set, flipped 1M <-> Coded every [phyAlternateMillis]. */
+    /**
+     * One advertising set, its PHY governed by [phyPolicy]: pinned to Coded, or
+     * pinned to 1M, or flipped every [phyAlternateMillis].
+     */
     private fun startAlternating(
         advertiser: android.bluetooth.le.BluetoothLeAdvertiser,
         data: AdvertiseData,
     ) {
-        alternatingPhy = BluetoothDevice.PHY_LE_CODED
+        alternatingPhy = when (phyPolicy) {
+            PhyPolicy.ONE_M_ONLY -> BluetoothDevice.PHY_LE_1M
+            else -> BluetoothDevice.PHY_LE_CODED
+        }
+        log("PHY policy $phyPolicy")
         startAlternatingLeg(advertiser, data)
+        if (phyPolicy != PhyPolicy.ALTERNATE) return // pinned — no flip timer
+
         alternateTick = object : Runnable {
             override fun run() {
                 if (!running || alternatingCallback == null) return

@@ -62,6 +62,7 @@ class ReportStore(
                     bestRssiDbm = rssiDbm,
                     lastRssiDbm = rssiDbm,
                     receivedHopCount = packet.hopCount,
+                    hopsSeen = setOf(packet.hopCount),
                     timesHeard = 1,
                     isOwn = isOwn,
                 )
@@ -83,6 +84,7 @@ class ReportStore(
                 bytes = bytesForEntry,
                 packet = packetForEntry,
                 receivedHopCount = hopForEntry,
+                hopsSeen = existing.hopsSeen + packet.hopCount,
                 lastHeardAtMillis = receivedAtMillis,
                 bestRssiDbm = maxOf(existing.bestRssiDbm, rssiDbm),
                 lastRssiDbm = rssiDbm,
@@ -190,8 +192,10 @@ data class StoredReport(
     val bestRssiDbm: Int,
     /** RSSI of the most recent reception — for the live Dig Here bar. */
     val lastRssiDbm: Int,
-    /** hop_count as it arrived on the wire. */
+    /** hop_count as it arrived on the wire (lowest kept). */
     val receivedHopCount: Int,
+    /** Every distinct hop count this identity has arrived at — path-diversity signal. */
+    val hopsSeen: Set<Int> = emptySet(),
     val timesHeard: Int,
     val isOwn: Boolean,
 ) {
