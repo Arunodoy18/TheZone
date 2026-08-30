@@ -94,6 +94,9 @@ data class TransportDiagnostics(
     val oneMPhyActive: Boolean = false,
     val packetsSent: Long = 0,
     val packetsReceived: Long = 0,
+    /** Inbound advertisements by PHY, for confirming dual-mode actually works. */
+    val rxCoded: Long = 0,
+    val rxOneM: Long = 0,
     val lastError: String? = null,
     /** Rolling, newest-last, wall-clock-stamped. Capped by the implementation. */
     val log: List<String> = emptyList(),

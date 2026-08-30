@@ -148,6 +148,19 @@ fun TransportDebugScreen() {
                 var filter by remember { mutableStateOf(ble.manufacturerFilterEnabled) }
                 var forceLegacy by remember { mutableStateOf(ble.forceLegacyAdvertising) }
                 var survival by remember { mutableStateOf(ble.survivalMode) }
+                var alternate by remember {
+                    mutableStateOf(ble.advertiseStrategy == com.thezone.transport.BleTransport.AdvertiseStrategy.ALTERNATING)
+                }
+                FilterChip(
+                    selected = alternate,
+                    onClick = {
+                        alternate = !alternate
+                        ble.advertiseStrategy =
+                            if (alternate) com.thezone.transport.BleTransport.AdvertiseStrategy.ALTERNATING
+                            else com.thezone.transport.BleTransport.AdvertiseStrategy.CONCURRENT
+                    },
+                    label = { Text(if (alternate) "PHY: alternate" else "PHY: concurrent") },
+                )
                 FilterChip(
                     selected = filter,
                     onClick = { filter = !filter; ble.manufacturerFilterEnabled = filter },
@@ -175,6 +188,7 @@ fun TransportDebugScreen() {
         KeyVal("running / adv / scan", "${diagnostics.running} / ${diagnostics.advertising} / ${diagnostics.scanning}")
         KeyVal("PHY active", phyLabel(diagnostics.codedPhyActive, diagnostics.oneMPhyActive, diagnostics.legacyFallbackActive))
         KeyVal("sent / received", "${diagnostics.packetsSent} / ${diagnostics.packetsReceived}")
+        KeyVal("rx Coded / 1M", "${diagnostics.rxCoded} / ${diagnostics.rxOneM}")
         KeyVal("peers heard", rows.size.toString())
         diagnostics.lastError?.let {
             Text("last error: $it", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)

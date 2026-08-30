@@ -36,6 +36,8 @@ abstract class BaseTransport(final override val kind: String) : ReportTransport 
 
     private var sent = 0L
     private var received = 0L
+    private var rxCoded = 0L
+    private var rxOneM = 0L
 
     override fun onPacket(callback: (InboundPacket) -> Unit) {
         synchronized(lock) { packetCallback = callback }
@@ -49,10 +51,15 @@ abstract class BaseTransport(final override val kind: String) : ReportTransport 
     override val diagnostics: TransportDiagnostics
         get() = snapshot()
 
-    /** Deliver an inbound packet to the sink and bump the counter. */
+    /** Deliver an inbound packet to the sink and bump the counters. */
     protected fun deliver(packet: InboundPacket) {
         val cb = synchronized(lock) {
             received++
+            when (packet.phy) {
+                PacketPhy.CODED -> rxCoded++
+                PacketPhy.ONE_M -> rxOneM++
+                PacketPhy.UNKNOWN -> {}
+            }
             packetCallback
         }
         cb?.invoke(packet)
@@ -97,6 +104,8 @@ abstract class BaseTransport(final override val kind: String) : ReportTransport 
             oneMPhyActive = oneMPhyActive,
             packetsSent = sent,
             packetsReceived = received,
+            rxCoded = rxCoded,
+            rxOneM = rxOneM,
             lastError = lastError,
             log = logLines.toList(),
         )

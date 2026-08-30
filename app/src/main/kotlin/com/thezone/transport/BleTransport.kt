@@ -50,9 +50,22 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
 
     @Volatile private var packetBytes: ByteArray? = null
 
+    /**
+     * How to cover both PHYs.
+     *  - ALTERNATING: one advertising set, flipped 1M <-> Coded on a timer. The
+     *    robust default — several controllers accept a second concurrent set
+     *    (status 0) but never actually give it airtime, so Coded silently never
+     *    goes out. Alternating also matches the duty-cycle ladder.
+     *  - CONCURRENT: two sets at once (1M fast, Coded slow). Works only where the
+     *    controller truly schedules both.
+     */
+    enum class AdvertiseStrategy { ALTERNATING, CONCURRENT }
+
     // Debug switches (BUILD_PLAN H2 troubleshooting order).
     @Volatile var manufacturerFilterEnabled = true
     @Volatile var forceLegacyAdvertising = false
+    @Volatile var advertiseStrategy = AdvertiseStrategy.ALTERNATING
+    @Volatile var phyAlternateMillis = 1500L
     @Volatile var survivalMode = false
         set(value) {
             field = value
@@ -62,6 +75,11 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
     private var set1mCallback: SetCallback? = null
     private var setCodedCallback: SetCallback? = null
     private var legacyCallback: AdvertiseCallback? = null
+
+    // ALTERNATING state
+    private var alternatingCallback: SetCallback? = null
+    private var alternatingPhy = BluetoothDevice.PHY_LE_CODED
+    private var alternateTick: Runnable? = null
 
     // --- lifecycle --------------------------------------------------------
 
@@ -147,35 +165,82 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
         oneMPhyActive = false
 
         try {
-            if (extended) {
-                val multi = a.isMultipleAdvertisementSupported
-                val wantCoded = a.isLeCodedPhySupported
-
-                if (wantCoded) {
-                    val params = paramsFor(BluetoothDevice.PHY_LE_CODED, codedIntervalUnits)
-                    log("startAdvertisingSet 'Coded' primary=Coded secondary=Coded interval=$codedIntervalUnits units")
-                    setCodedCallback = SetCallback("Coded").also {
-                        advertiser.startAdvertisingSet(params, data, null, null, null, it)
-                    }
-                }
-                if (!wantCoded || multi) {
-                    val params = paramsFor(BluetoothDevice.PHY_LE_1M, oneMIntervalUnits)
-                    log("startAdvertisingSet '1M' primary=1M secondary=1M interval=$oneMIntervalUnits units")
-                    set1mCallback = SetCallback("1M").also {
-                        advertiser.startAdvertisingSet(params, data, null, null, null, it)
-                    }
-                }
-                if (wantCoded && !multi) {
-                    log("multiple advertisement unsupported — Coded PHY only, no concurrent 1M")
-                }
-            } else {
+            if (!extended) {
                 startLegacyAdvertising(advertiser, data)
+            } else {
+                val wantCoded = a.isLeCodedPhySupported
+                when {
+                    !wantCoded -> startSingleSet(advertiser, data, BluetoothDevice.PHY_LE_1M, "1M")
+                    advertiseStrategy == AdvertiseStrategy.CONCURRENT ->
+                        startConcurrentSets(advertiser, data, a.isMultipleAdvertisementSupported)
+                    else -> startAlternating(advertiser, data)
+                }
             }
             advertising = true
             countSent()
-            log("advertising ${bytes.size}B  hex=${bytes.toHex()}")
+            log("advertising ${bytes.size}B  strategy=$advertiseStrategy  hex=${bytes.toHex()}")
         } catch (t: Throwable) {
             fail("startAdvertising failed: ${t.message}")
+        }
+    }
+
+    private fun startSingleSet(
+        advertiser: android.bluetooth.le.BluetoothLeAdvertiser,
+        data: AdvertiseData,
+        primaryPhy: Int,
+        label: String,
+    ) {
+        val interval = if (primaryPhy == BluetoothDevice.PHY_LE_CODED) codedIntervalUnits else oneMIntervalUnits
+        log("startAdvertisingSet '$label' primary=${phyName(primaryPhy)} interval=$interval units")
+        val cb = SetCallback(label)
+        if (label == "Coded") setCodedCallback = cb else set1mCallback = cb
+        advertiser.startAdvertisingSet(paramsFor(primaryPhy, interval), data, null, null, null, cb)
+    }
+
+    private fun startConcurrentSets(
+        advertiser: android.bluetooth.le.BluetoothLeAdvertiser,
+        data: AdvertiseData,
+        multi: Boolean,
+    ) {
+        startSingleSet(advertiser, data, BluetoothDevice.PHY_LE_CODED, "Coded")
+        if (multi) {
+            startSingleSet(advertiser, data, BluetoothDevice.PHY_LE_1M, "1M")
+        } else {
+            log("multiple advertisement unsupported — Coded PHY only, no concurrent 1M")
+        }
+    }
+
+    /** One set, flipped 1M <-> Coded every [phyAlternateMillis]. */
+    private fun startAlternating(
+        advertiser: android.bluetooth.le.BluetoothLeAdvertiser,
+        data: AdvertiseData,
+    ) {
+        alternatingPhy = BluetoothDevice.PHY_LE_CODED
+        startAlternatingLeg(advertiser, data)
+        alternateTick = object : Runnable {
+            override fun run() {
+                if (!running || alternatingCallback == null) return
+                val adv = adapter?.bluetoothLeAdvertiser ?: return
+                alternatingCallback?.let { runCatching { adv.stopAdvertisingSet(it) } }
+                alternatingPhy =
+                    if (alternatingPhy == BluetoothDevice.PHY_LE_CODED) BluetoothDevice.PHY_LE_1M
+                    else BluetoothDevice.PHY_LE_CODED
+                startAlternatingLeg(adv, data)
+                handler.postDelayed(this, phyAlternateMillis)
+            }
+        }
+        handler.postDelayed(alternateTick!!, phyAlternateMillis)
+    }
+
+    private fun startAlternatingLeg(
+        advertiser: android.bluetooth.le.BluetoothLeAdvertiser,
+        data: AdvertiseData,
+    ) {
+        val label = phyName(alternatingPhy)
+        val interval =
+            if (alternatingPhy == BluetoothDevice.PHY_LE_CODED) codedIntervalUnits else oneMIntervalUnits
+        alternatingCallback = SetCallback("alt-$label").also {
+            advertiser.startAdvertisingSet(paramsFor(alternatingPhy, interval), data, null, null, null, it)
         }
     }
 
@@ -225,16 +290,20 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
     }
 
     private fun stopAdvertising() {
+        alternateTick?.let { handler.removeCallbacks(it) }
+        alternateTick = null
         val advertiser = adapter?.bluetoothLeAdvertiser
         try {
             set1mCallback?.let { advertiser?.stopAdvertisingSet(it) }
             setCodedCallback?.let { advertiser?.stopAdvertisingSet(it) }
+            alternatingCallback?.let { advertiser?.stopAdvertisingSet(it) }
             legacyCallback?.let { advertiser?.stopAdvertising(it) }
         } catch (t: Throwable) {
             log("stopAdvertising: ${t.message}")
         }
         set1mCallback = null
         setCodedCallback = null
+        alternatingCallback = null
         legacyCallback = null
         advertising = false
         codedPhyActive = false
@@ -242,9 +311,11 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
     }
 
     private inner class SetCallback(private val label: String) : AdvertisingSetCallback() {
+        private val isCoded = label.contains("Coded")
+
         override fun onAdvertisingSetStarted(set: AdvertisingSet?, txPower: Int, status: Int) {
             if (status == ADVERTISE_SUCCESS) {
-                if (label == "Coded") codedPhyActive = true else oneMPhyActive = true
+                if (isCoded) codedPhyActive = true else oneMPhyActive = true
                 log("advertising set '$label' started (txPower=$txPower dBm)")
             } else {
                 fail("advertising set '$label' failed: ${setError(status)}")
@@ -253,7 +324,7 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
         }
 
         override fun onAdvertisingSetStopped(set: AdvertisingSet?) {
-            if (label == "Coded") codedPhyActive = false else oneMPhyActive = false
+            if (isCoded) codedPhyActive = false else oneMPhyActive = false
             log("advertising set '$label' stopped")
             emitDiagnostics()
         }
