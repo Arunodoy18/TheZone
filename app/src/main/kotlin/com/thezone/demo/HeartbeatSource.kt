@@ -7,6 +7,8 @@ import com.thezone.packet.BatteryScale
 import com.thezone.packet.EventClock
 import com.thezone.packet.Packet
 import com.thezone.packet.PacketCodec
+import com.thezone.packet.Status
+import com.thezone.sensors.Altitude
 
 /**
  * H2 PLACEHOLDER. Builds the 31-byte packet this phone broadcasts so the
@@ -25,23 +27,27 @@ object HeartbeatSource {
             com.thezone.demo.DebugOverrides.batteryPercentOverride ?: readBatteryPercent(context)
         val batteryLevel = BatteryScale.percentToNibble(batteryPercent)
 
+        // Sensor-derived status with zero user input: a rising barometric trend
+        // is inferred as RISING_WATER (PACKET_SPEC status enum, PRD §6).
+        val status = if (Altitude.rising) Status.RISING_WATER.code else Status.UNKNOWN.code
+
         val packet = Packet(
             version = Packet.PROTOCOL_VERSION,
             type = Packet.TYPE_STATUS,
             deviceId = identity.deviceId,
             deltaLat = Packet.NO_FIX,
             deltaLon = Packet.NO_FIX,
-            status = 0, // UNKNOWN — a later phase sets sensor-derived status
+            status = status,
             severity = 0,
             casualties = 0,
             timestampMinutes = EventClock.stampMinutes(nowMillis),
             batteryLevel = batteryLevel,
             hopCount = 0,
             nextExpectedTxSeconds = ladderSeconds(batteryPercent),
-            altDelta = Packet.NO_BAROMETER, // H5 provides the real delta
-            altTrend = 0,
+            altDelta = Altitude.deltaByte,   // NO_BAROMETER when absent — never a false zero
+            altTrend = Altitude.trendMeters,
         )
-        return PacketCodec.encode(packet, identity)
+        return PacketCodec.encode(packet, identity).also { Altitude.markTransmitted() }
     }
 
     /** docs/PACKET_SPEC.md "next_expected_tx" table. */

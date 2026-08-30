@@ -13,6 +13,7 @@ import com.thezone.core.StoredReport
 import com.thezone.demo.HeartbeatSource
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.PacketCodec
+import com.thezone.sensors.PressureReader
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -42,6 +43,7 @@ object TransportController {
     private var pumpTick = 0L
     private var lastAdvertisedHex: String? = null
     private var appContext: Context? = null
+    private var pressureReader: PressureReader? = null
 
     @Volatile
     var diagnostics: TransportDiagnostics = TransportDiagnostics(kind = "none")
@@ -89,6 +91,8 @@ object TransportController {
         store.ownDeviceIdHex = runCatching {
             DeviceKeyStore.identity(context).deviceId.toHex()
         }.getOrNull()
+        if (pressureReader == null) pressureReader = PressureReader(appContext!!)
+        pressureReader?.start()
         transport?.start()
         startPump()
         ping()
@@ -98,6 +102,7 @@ object TransportController {
         pumpTask?.cancel(false)
         pumpTask = null
         lastAdvertisedHex = null
+        pressureReader?.stop()
         transport?.stop()
         ping()
     }

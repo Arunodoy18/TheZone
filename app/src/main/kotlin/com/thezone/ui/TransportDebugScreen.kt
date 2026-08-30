@@ -39,6 +39,8 @@ import androidx.core.content.ContextCompat
 import com.thezone.core.SilenceState
 import com.thezone.demo.DebugOverrides
 import com.thezone.identity.DeviceKeyStore
+import com.thezone.packet.Packet
+import com.thezone.sensors.Altitude
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
 import com.thezone.transport.toHex
@@ -157,6 +159,16 @@ fun TransportDebugScreen() {
                 )
             }
         }
+
+        Header("Altitude (barometer)")
+        KeyVal("has barometer", Altitude.hasBarometer.toString())
+        KeyVal(
+            "Δ metres",
+            if (Altitude.deltaByte == Packet.NO_BAROMETER) "n/a (no baro)" else "${Altitude.deltaByte} m",
+        )
+        KeyVal("trend / rising", "${Altitude.trendMeters} m  /  ${Altitude.rising}")
+        KeyVal("baseline alt", Altitude.baselineMeters?.let { "%.1f m".format(it) } ?: "—")
+        OutlinedButton(onClick = { Altitude.resetBaseline() }) { Text("Reset baseline (I'm at ground)") }
 
         val ble = TransportController.bleTransport()
         if (ble != null) {
