@@ -46,9 +46,21 @@ Single-phone, via the "H2 Transport" tab → BLE → Start. Follow with `adb log
 | Realme 7 | yes | yes | started (txPower −2 dBm) | started | API 30 — only FINE_LOCATION gates it |
 | Motorola Edge 50 Pro | yes | yes | started (txPower 0 dBm) | started | API 36 |
 
-All three advertise on both PHYs and scan without error. **Two-phone air path
-(A advertises → B receives + decodes) not yet run — that is the H2 checkpoint.**
-Device ids seen: S23 `d675c51afb0d`, Realme 7 `ca949dc36761`, Motorola `d7aad5677d8c`.
+All three advertise on both PHYs and scan without error. Device ids: S23
+`d675c51afb0d`, Realme 7 `ca949dc36761`, Motorola `d7aad5677d8c`.
+
+**Two-phone air path (A → B) CONFIRMED** (Realme scanning, S23 + Motorola
+advertising): both peers received, raw hex decodes to a valid heartbeat, both
+directions. That is BUILD_PLAN's H2 checkpoint — met.
+
+**Coded PHY caveat:** with two concurrent advertising sets, every reception came
+in on 1M (`scan sample: pri=1M sec=1M legacy=false`, `rxByPhy={ONE_M=n}`, zero
+Coded). The Coded set starts (status 0) but the controller gives it no airtime.
+Fix in commit 69ef9a4: the advertiser now defaults to ALTERNATING — one set
+flipped 1M↔Coded every 1.5 s — so Coded is genuinely emitted. The H2 screen
+shows an `rx Coded / 1M` split to confirm on hardware. **Re-run the two-phone
+test on the alternating build to confirm `rx Coded > 0`** (H8-class check;
+1M-only remains the documented acceptable cut).
 
 **Barometer is the constraint:** only the S23 has one. So role assignment is forced:
 
