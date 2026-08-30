@@ -1,0 +1,521 @@
+<title>The Dead Man's Packet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* ---- light palette: field notebook on paper (bare :root = complete light set) ---- */
+  :root {
+    --ground:      #F4F1E9;
+    --panel:       #FFFFFF;
+    --panel-2:     #ECE7D9;
+    --line:        #D5CFBF;
+    --line-soft:   #E3DECF;
+    --ink:         #14181B;
+    --ink-2:       #565D63;
+    --signal:      #0B7D6A;
+    --signal-weak: rgba(11,125,106,0.12);
+    --on-signal:   #F4F1E9;
+    --calm:        #1F6E7B;
+    --amber:       #A66A13;
+    --alarm:       #C0401F;
+    --alarm-deep:  #8C2717;
+    --hatch:       rgba(20,24,27,0.10);
+    --shadow:      0 1px 2px rgba(20,24,27,0.06), 0 8px 24px rgba(20,24,27,0.05);
+  }
+  /* ---- dark palette: sonar / bathymetric display ---- */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #070A0D;
+      --panel:       #10161C;
+      --panel-2:     #161E26;
+      --line:        #223038;
+      --line-soft:   #1A242B;
+      --ink:         #ECE7DA;
+      --ink-2:       #808B95;
+      --signal:      #1BE7C4;
+      --signal-weak: rgba(27,231,196,0.10);
+      --on-signal:   #04110E;
+      --calm:        #2E8A97;
+      --amber:       #F2A93B;
+      --alarm:       #EF5B32;
+      --alarm-deep:  #C13B22;
+      --hatch:       rgba(236,231,218,0.11);
+      --shadow:      0 0 0 1px rgba(0,0,0,0.2), 0 12px 40px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #070A0D;
+    --panel:       #10161C;
+    --panel-2:     #161E26;
+    --line:        #223038;
+    --line-soft:   #1A242B;
+    --ink:         #ECE7DA;
+    --ink-2:       #808B95;
+    --signal:      #1BE7C4;
+    --signal-weak: rgba(27,231,196,0.10);
+    --on-signal:   #04110E;
+    --calm:        #2E8A97;
+    --amber:       #F2A93B;
+    --alarm:       #EF5B32;
+    --alarm-deep:  #C13B22;
+    --hatch:       rgba(236,231,218,0.11);
+    --shadow:      0 0 0 1px rgba(0,0,0,0.2), 0 12px 40px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  .wrap { max-width: 47rem; margin: 0 auto; padding: 0 1.4rem 6rem; }
+
+  /* running left rule — a depth axis */
+  main {
+    border-left: 1px solid var(--line);
+    padding-left: clamp(1rem, 4vw, 2.6rem);
+    margin-left: clamp(0.2rem, 2vw, 1rem);
+  }
+
+  /* ---- hero ---- */
+  header { position: relative; padding: clamp(3.5rem, 12vw, 6rem) 0 clamp(2rem, 6vw, 3rem); overflow: hidden; }
+  .sweep {
+    position: absolute; top: -30%; left: 50%; width: 130vw; height: 130vw;
+    max-width: 900px; max-height: 900px;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0deg, var(--signal-weak) 26deg, transparent 42deg);
+    animation: spin 14s linear infinite;
+    pointer-events: none; opacity: 0.9;
+  }
+  .rings { position: absolute; inset: 0; pointer-events: none; opacity: 0.5; }
+  .rings i {
+    position: absolute; top: -30%; left: 50%; transform: translateX(-50%);
+    border: 1px solid var(--line); border-radius: 50%;
+  }
+  .rings i:nth-child(1) { width: 40vw; height: 40vw; margin-top: 12vw; }
+  .rings i:nth-child(2) { width: 68vw; height: 68vw; }
+  .rings i:nth-child(3) { width: 100vw; height: 100vw; margin-top: -12vw; }
+  @keyframes spin { to { transform: translateX(-50%) rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .sweep { animation: none; } }
+
+  .kicker {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; font-weight: 500;
+    letter-spacing: 0.22em; text-transform: uppercase; color: var(--signal);
+    position: relative;
+  }
+  h1 {
+    position: relative;
+    font-size: clamp(2.1rem, 7vw, 3.4rem); line-height: 1.08; font-weight: 700;
+    letter-spacing: -0.022em; margin: 0.8rem 0 0; text-wrap: balance;
+  }
+  .lede {
+    position: relative;
+    font-size: clamp(1.05rem, 2.4vw, 1.25rem); color: var(--ink-2);
+    margin: 1.1rem 0 0; max-width: 34rem;
+  }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-size: clamp(1.4rem, 3.6vw, 1.9rem); font-weight: 600; letter-spacing: -0.015em;
+    margin: 3.6rem 0 0.2rem; text-wrap: balance; scroll-margin-top: 2rem;
+  }
+  h2 .n {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.8rem; font-weight: 500;
+    color: var(--signal); letter-spacing: 0.1em; display: block; margin-bottom: 0.5rem;
+  }
+  h3 { font-size: 1.02rem; font-weight: 600; margin: 1.8rem 0 0.3rem; letter-spacing: -0.01em; }
+  p { margin: 0.9rem 0 0; }
+  p.tight { margin-top: 0.4rem; }
+  a { color: var(--signal); text-underline-offset: 3px; }
+  strong { font-weight: 600; }
+  em { font-style: normal; color: var(--signal); }
+
+  .pull {
+    margin: 1.6rem 0 0; padding: 1rem 0 1rem 1.2rem;
+    border-left: 3px solid var(--signal);
+    font-size: 1.12rem; color: var(--ink); font-weight: 500;
+  }
+
+  ul { margin: 0.9rem 0 0; padding-left: 1.1rem; }
+  li { margin: 0.35rem 0; }
+  li::marker { color: var(--ink-2); }
+
+  /* ---- mode cards ---- */
+  .modes { display: grid; gap: 0.7rem; margin-top: 1.4rem; }
+  @media (min-width: 620px) { .modes { grid-template-columns: repeat(3, 1fr); } }
+  .mode {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem 1rem 1.1rem; box-shadow: var(--shadow);
+  }
+  .mode h4 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+  .mode .tag {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--signal); display: block; margin-bottom: 0.35rem;
+  }
+  .mode p { margin: 0.4rem 0 0; font-size: 0.9rem; color: var(--ink-2); line-height: 1.5; }
+
+  /* ---- numbered walk ---- */
+  .walk { margin-top: 1.4rem; display: grid; gap: 0.6rem; }
+  .step {
+    display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.9rem; align-items: start;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1rem;
+  }
+  .step .s {
+    font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 1rem;
+    color: var(--on-signal); background: var(--signal); border-radius: 7px;
+    width: 2.2rem; height: 2.2rem; display: grid; place-items: center;
+  }
+  .step b { font-weight: 600; }
+  .step p { margin: 0.15rem 0 0; font-size: 0.92rem; color: var(--ink-2); }
+
+  /* ---- silence contrast ---- */
+  .contrast { display: grid; gap: 0.8rem; margin-top: 1.4rem; }
+  @media (min-width: 560px) { .contrast { grid-template-columns: 1fr 1fr; } }
+  .tile {
+    border: 1px solid var(--line); border-radius: 12px; padding: 1rem;
+    background: var(--panel);
+  }
+  .tile .box { aspect-ratio: 16 / 10; border-radius: 8px; position: relative; overflow: hidden; }
+  .tile.empty .box { background: var(--panel-2); }
+  .tile.empty .box::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px;
+    background: var(--ink-2); opacity: 0.4; border-radius: 50%; transform: translate(-50%, -50%);
+  }
+  .tile.loss .box {
+    background:
+      repeating-linear-gradient(45deg, transparent 0 7px, var(--hatch) 7px 14px),
+      var(--panel-2);
+    border: 2px solid var(--ink); border-radius: 6px;
+  }
+  .tile.loss .box::after {
+    content: "12 DARK · 04:12"; position: absolute; left: 8px; bottom: 8px;
+    font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; letter-spacing: 0.08em;
+    color: var(--ink); background: var(--ground); padding: 2px 6px; border-radius: 4px;
+  }
+  .tile .cap {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-top: 0.7rem; color: var(--ink-2);
+  }
+  .tile.loss .cap { color: var(--alarm); }
+
+  /* ---- packet strip ---- */
+  .packet { margin-top: 1.4rem; overflow-x: auto; padding-bottom: 0.4rem; }
+  .bytes { display: flex; gap: 3px; min-width: 640px; }
+  .bytes span {
+    flex: 1; height: 44px; border-radius: 3px; position: relative;
+    background: var(--panel-2); border: 1px solid var(--line-soft);
+  }
+  .bytes span::after {
+    content: attr(data-i); position: absolute; top: 100%; left: 0; right: 0; text-align: center;
+    font-family: "IBM Plex Mono", monospace; font-size: 0.58rem; color: var(--ink-2); padding-top: 3px;
+  }
+  .bytes span.f-hdr  { background: color-mix(in srgb, var(--calm) 34%, var(--panel-2)); }
+  .bytes span.f-id   { background: color-mix(in srgb, var(--ink-2) 26%, var(--panel-2)); }
+  .bytes span.f-pos  { background: color-mix(in srgb, var(--calm) 22%, var(--panel-2)); }
+  .bytes span.f-stat { background: color-mix(in srgb, var(--amber) 30%, var(--panel-2)); }
+  .bytes span.f-time { background: color-mix(in srgb, var(--ink-2) 20%, var(--panel-2)); }
+  .bytes span.f-bat  { background: color-mix(in srgb, var(--amber) 22%, var(--panel-2)); }
+  .bytes span.f-usp  {
+    background: var(--signal); border-color: var(--signal);
+    box-shadow: 0 0 0 2px var(--signal-weak), 0 0 14px var(--signal-weak);
+  }
+  .bytes span.f-alt  { background: color-mix(in srgb, var(--calm) 30%, var(--panel-2)); }
+  .bytes span.f-auth { background: color-mix(in srgb, var(--alarm-deep) 26%, var(--panel-2)); }
+  .bytes span.f-rsv  { background: var(--panel-2); border-style: dashed; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1.4rem;
+    font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; color: var(--ink-2);
+  }
+  .legend i { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .legend b { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+
+  /* ---- tables ---- */
+  .scroller { overflow-x: auto; margin-top: 1.2rem; border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 460px; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-2); background: var(--panel-2);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.mono, th.mono { font-family: "IBM Plex Mono", monospace; font-size: 0.8rem; white-space: nowrap; }
+  .pass { color: var(--signal); font-weight: 600; }
+  .warn { color: var(--amber); font-weight: 600; }
+
+  /* ---- feature groups ---- */
+  .feat { margin-top: 1.2rem; }
+  .feat h3 {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--signal); margin: 1.8rem 0 0.6rem;
+  }
+  .feat dl { margin: 0; display: grid; gap: 0.55rem; }
+  .feat div {
+    display: grid; gap: 0.15rem 1rem; padding: 0.7rem 0.9rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  }
+  @media (min-width: 640px) { .feat div { grid-template-columns: 12rem 1fr; align-items: baseline; } }
+  .feat dt { font-weight: 600; font-size: 0.9rem; }
+  .feat dd { margin: 0; font-size: 0.88rem; color: var(--ink-2); line-height: 1.5; }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.6rem; border-top: 1px solid var(--line);
+    font-size: 0.85rem; color: var(--ink-2);
+  }
+  footer .mono { font-size: 0.72rem; letter-spacing: 0.08em; }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="sweep" aria-hidden="true"></div>
+  <div class="rings" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="kicker">Offline disaster signal network · field explainer</div>
+  <h1>The Dead Man's Packet</h1>
+  <p class="lede">Zone is a phone app that keeps working when every network is gone. Phones talk straight to each other over Bluetooth, and a trapped person's signal <b>physically walks out of the disaster zone in a rescuer's pocket</b>. Its one original idea: every packet says when the phone will speak next — so when a phone goes quiet, the network can tell whether that silence was <em>expected</em> or whether the phone was <em>destroyed</em>.</p>
+</header>
+
+<main>
+
+<h2><span class="n">01</span>The problem</h2>
+<p>In the first 72 hours after an earthquake, two failures kill people who were survivable:</p>
+<ul>
+  <li><strong>Communication blackout.</strong> Cell towers are down or overloaded. A person pinned under a slab has a charged phone in their pocket and no way to use it. Rescuers on the pile have no way to hear them.</li>
+  <li><strong>Information fog.</strong> The command post cannot tell <em>total structural collapse</em> from <em>minor waterlogging</em>, or <em>“search this whole block”</em> from <em>“search this ten-metre circle.”</em> Crews get sent to buildings that are already clear while calls go unanswered a street away.</li>
+</ul>
+<p>Existing mesh-messenger apps (Bridgefy and the like) carry chat between people who are both fine and both holding their phones. They do nothing for someone unconscious, and they treat a phone going offline as a non-event — exactly the event that matters here.</p>
+
+<h2><span class="n">02</span>What Zone is</h2>
+<p>One Android APK. Native Kotlin, no servers, no internet — it runs identically in airplane mode. It has three modes, chosen once on first launch:</p>
+<div class="modes">
+  <div class="mode">
+    <span class="tag">Citizen</span>
+    <h4>The trapped person</h4>
+    <p>Opens straight into broadcasting. Dark screen to save battery and not give away position. One line — “You are being heard” — and one number: how many phones have carried your signal. Three optional buttons: Trapped / Water rising / Safe.</p>
+  </div>
+  <div class="mode">
+    <span class="tag">Responder</span>
+    <h4>The rescuer on the pile</h4>
+    <p>Built for gloves, rain and sunlight. A live list of every heard person, sorted by triage priority, not by time. Tap a row for <strong>Dig Here</strong> — a proximity bar that fills as you walk toward the signal. A metal detector, not a map.</p>
+  </div>
+  <div class="mode">
+    <span class="tag">Map / EOC</span>
+    <h4>The command post</h4>
+    <p>A grid-cell severity map for the projector. Cells are coloured by confidence-scored severity. A cell where every phone went silent at once gets its own visual language and a timestamp. A time scrubber replays the whole event.</p>
+  </div>
+</div>
+
+<h2><span class="n">03</span>How a signal leaves the zone</h2>
+<p>No phone-to-phone pairing, no connection. Every phone continuously broadcasts a tiny packet in its Bluetooth advertisement, and every phone listens. The relay is three moves:</p>
+<div class="walk">
+  <div class="step">
+    <div class="s">1</div>
+    <div><b>Broadcast.</b><p>The trapped phone advertises a 31-byte packet — who, where, status, altitude, battery, and when it will transmit again. It repeats on a schedule set by its battery level.</p></div>
+  </div>
+  <div class="step">
+    <div class="s">2</div>
+    <div><b>Carry.</b><p>Any phone in range copies the packet into its store and starts rebroadcasting it with the hop count bumped by one. The original is never modified. Duplicates are dropped by content hash, so the same message never loops.</p></div>
+  </div>
+  <div class="step">
+    <div class="s">3</div>
+    <div><b>Deliver.</b><p>That second phone is walked — by a person, in a pocket — out to a responder or the command post, which now holds the trapped person’s packet at hop count 2. The signal crossed the gap on foot.</p></div>
+  </div>
+</div>
+<p class="tight">Merging two phones’ stores is just set-union over hash-addressed records — a conflict-free merge (a CRDT) by construction, with no library.</p>
+
+<h2><span class="n">04</span>The USP — the Dead Man's Packet</h2>
+<p>Every packet carries one field the rest of the system is built around: <strong><span class="mono">next_expected_tx</span></strong> — the number of seconds until the sender intends to transmit again. It is computed honestly from the sender’s current battery rung, never faked.</p>
+<p>For every phone it has heard, a receiver tracks <span class="mono">last_heard_at</span>, the promised interval, and last known battery. On a timer it classifies each one:</p>
+<div class="scroller">
+<table>
+  <thead><tr><th>Condition</th><th>Verdict</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">overdue &lt; grace</td><td>ALIVE</td><td>A missed advert or two. Normal for Bluetooth.</td></tr>
+    <tr><td class="mono">battery ≤ critical</td><td>EXPECTED&nbsp;SILENCE</td><td>It warned us it was going quiet. Deprioritise, don’t alarm.</td></tr>
+    <tr><td class="mono">overdue &gt; 3× promised</td><td>UNEXPECTED&nbsp;SILENCE</td><td>It promised to speak in 60&nbsp;s and vanished at 12 with 70% battery. The phone was destroyed. Escalate.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Then the cell-level rule, which is the whole point on the map:</p>
+<p class="pull">If a ~100&nbsp;m grid cell holds ≥ 3 phones and ≥ 80% of them enter unexpected silence inside the same 120-second window → <strong>CELL&nbsp;LOSS</strong>. The area collapsed.</p>
+<p>Every state change is written to an in-app log with a wall-clock timestamp, so the demo can point at the exact second a phone went dark. This also produces a triage signal no other system has: <strong>you can rank victims by who is about to stop transmitting</strong> — reach the phone at 4% before it goes silent, not after.</p>
+
+<h2><span class="n">05</span>Silence is the signal</h2>
+<p>The single most important visual decision in the project: a cell where everyone went quiet at once must never look like a cell that never had coverage. If those two read the same, the idea is invisible on stage.</p>
+<div class="contrast">
+  <div class="tile empty">
+    <div class="box"></div>
+    <div class="cap">No data — nothing was ever here</div>
+  </div>
+  <div class="tile loss">
+    <div class="box"></div>
+    <div class="cap">Cell loss — 12 phones, all silent at 04:12</div>
+  </div>
+</div>
+<p class="tight">Flat and neutral for absence. A hatched, framed, timestamped hole for a collapse. The map reads at projector distance or it is not doing its job.</p>
+
+<h2><span class="n">06</span>The 31-byte packet</h2>
+<p>Bluetooth’s legacy advertising payload is 31 bytes. Design for more and you maintain two encoders under pressure, so the core is exactly 31 — “a life in 31 bytes.” Big-endian, carried in the manufacturer-data field.</p>
+<div class="packet">
+  <div class="bytes" role="img" aria-label="31 byte fields, left to right">
+    <span class="f-hdr"  data-i="0"></span>
+    <span class="f-id"   data-i="1"></span><span class="f-id" data-i=""></span><span class="f-id" data-i=""></span><span class="f-id" data-i=""></span><span class="f-id" data-i=""></span><span class="f-id" data-i="6"></span>
+    <span class="f-pos"  data-i="7"></span><span class="f-pos" data-i=""></span><span class="f-pos" data-i=""></span><span class="f-pos" data-i="10"></span>
+    <span class="f-stat" data-i="11"></span>
+    <span class="f-stat" data-i="12"></span>
+    <span class="f-time" data-i="13"></span><span class="f-time" data-i="14"></span>
+    <span class="f-bat"  data-i="15"></span>
+    <span class="f-usp"  data-i="16"></span><span class="f-usp" data-i="17"></span>
+    <span class="f-alt"  data-i="18"></span>
+    <span class="f-auth" data-i="19"></span><span class="f-auth" data-i=""></span><span class="f-auth" data-i=""></span><span class="f-auth" data-i="22"></span>
+    <span class="f-alt"  data-i="23"></span>
+    <span class="f-rsv"  data-i="24"></span><span class="f-rsv" data-i=""></span><span class="f-rsv" data-i=""></span><span class="f-rsv" data-i=""></span><span class="f-rsv" data-i=""></span><span class="f-rsv" data-i=""></span><span class="f-rsv" data-i="30"></span>
+  </div>
+</div>
+<div class="legend">
+  <i><b style="background:var(--calm)"></b> version / type</i>
+  <i><b style="background:var(--ink-2)"></b> device id (6&nbsp;B)</i>
+  <i><b style="background:var(--calm)"></b> position delta (4&nbsp;B)</i>
+  <i><b style="background:var(--amber)"></b> status · severity / casualties</i>
+  <i><b style="background:var(--ink-2)"></b> timestamp</i>
+  <i><b style="background:var(--amber)"></b> battery / hops</i>
+  <i><b style="background:var(--signal)"></b> next_expected_tx — the USP</i>
+  <i><b style="background:var(--calm)"></b> altitude delta + trend</i>
+  <i><b style="background:var(--alarm-deep)"></b> auth (4&nbsp;B)</i>
+  <i><b style="background:var(--panel-2);border:1px dashed var(--line)"></b> reserved (7&nbsp;B)</i>
+</div>
+<div class="scroller">
+<table>
+  <thead><tr><th class="mono">Off</th><th>Field</th><th>What it carries</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">0</td><td>version_type</td><td>Protocol version + packet type (0 = status).</td></tr>
+    <tr><td class="mono">1–6</td><td>device_id</td><td>First 6 bytes of a SHA-256 hash of a per-install random key. The whole identity story — no crypto library.</td></tr>
+    <tr><td class="mono">7–10</td><td>position</td><td>Lat/lon delta from a local origin, ~1–2&nbsp;m precision. A reserved value means “no GPS fix” — position is then inferred from the relay path.</td></tr>
+    <tr><td class="mono">11</td><td>status</td><td>Unknown / Safe / Trapped / Rising water / Injured / Has resource / Responder.</td></tr>
+    <tr><td class="mono">12</td><td>severity_casualties</td><td>Severity 0–15 and casualty count 0–15 packed into one byte.</td></tr>
+    <tr><td class="mono">13–14</td><td>timestamp</td><td>Minutes since a fixed event epoch.</td></tr>
+    <tr><td class="mono">15</td><td>battery_hops</td><td>Battery in 16 steps + hop count 0–15, one byte.</td></tr>
+    <tr><td class="mono">16–17</td><td class="pass">next_expected_tx</td><td>Seconds until the next transmission. The field the whole USP runs on. Must stay honest at every battery level.</td></tr>
+    <tr><td class="mono">18</td><td>alt_delta</td><td>Relative altitude in metres vs this phone’s launch baseline. A reserved value means “no barometer,” never a false zero.</td></tr>
+    <tr><td class="mono">19–22</td><td>auth</td><td>First 4 bytes of SHA-256(key ‖ payload). Anti-spoofing at demo scale, not real signatures.</td></tr>
+    <tr><td class="mono">23</td><td>alt_trend</td><td>Metres of altitude change over the last 3 transmissions. Positive = climbing.</td></tr>
+    <tr><td class="mono">24–30</td><td>reserved</td><td>Zero-filled. Room for a future text-code index.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="tight">Content identity hashes over the message bytes but <em>excludes</em> the hop nibble and auth, so a message is one record no matter how many times it is relayed.</p>
+
+<h2><span class="n">07</span>Every feature in the build</h2>
+
+<div class="feat">
+  <h3>Transport</h3>
+  <dl>
+    <div><dt>Connectionless BLE</dt><dd>Broadcast-only advertising in the manufacturer-data field. No GATT, no pairing — far more robust than a connection in rubble.</dd></div>
+    <div><dt>Dual PHY</dt><dd>Advertises and scans on both 1M and Coded PHY (S=8, eight transmissions per bit for range). Falls back to legacy 1M on chipsets without extended advertising, so the network never silently partitions by handset.</dd></div>
+    <div><dt>Foreground service</dt><dd>A persistent notification (“You are being heard”) keeps whatever transport is active alive across screen lock — Android kills a background advertiser otherwise.</dd></div>
+    <div><dt>Transport is an interface</dt><dd>BLE, an in-process 500-node simulator, and a JSON file import/export all implement the same contract. Every piece of logic runs identically on any of them — if Bluetooth fails at 3am, the demo still runs on the simulator.</dd></div>
+  </dl>
+
+  <h3>Packet &amp; store</h3>
+  <dl>
+    <div><dt>31-byte codec</dt><dd>Pure Kotlin, zero Android dependencies, covered by unit tests including a deliberate test that two packets differing only in hop count still hash as one message.</dd></div>
+    <div><dt>Content-addressed store</dt><dd>Dedup by hash; the same signal heard from five phones is stored once. Merge is set-union — conflict-free by design.</dd></div>
+    <div><dt>Relay without mutation</dt><dd>Rebroadcasts a hop-incremented copy, round-robin across carried packets so relaying never starves the phone’s own signal. Drops at hop 15.</dd></div>
+  </dl>
+
+  <h3>Dead Man's Packet</h3>
+  <dl>
+    <div><dt>Per-device silence</dt><dd>ALIVE / OVERDUE / EXPECTED / UNEXPECTED classification on every tick, with a generous grace period tuned on real phones.</dd></div>
+    <div><dt>Cell-loss detection</dt><dd>The ≥3-phones, ≥80%, 120-second rule over ~100&nbsp;m grid cells — the collapse signal.</dd></div>
+    <div><dt>Timestamped transition log</dt><dd>Every state change written to an in-app log with wall-clock time, so the exact moment of going dark is on screen.</dd></div>
+  </dl>
+
+  <h3>Triage</h3>
+  <dl>
+    <div><dt>Single-score priority</dt><dd>The responder list sorts by a computed rank, not recency: rising water + climbing altitude first, then just-lost (unexpected silence under 5&nbsp;min), then trapped below grade, then anyone about to go silent on low battery, then severity.</dd></div>
+    <div><dt>Reason line</dt><dd>Each row states why it is ranked where it is — “rising water, climbing.”</dd></div>
+  </dl>
+
+  <h3>Barometer</h3>
+  <dl>
+    <div><dt>Relative altitude</dt><dd>Pressure sensor → metres above or below a baseline captured at launch. Works indoors where GPS is dead. Absolute altitude is discarded — only the delta matters.</dd></div>
+    <div><dt>Trend &amp; auto-escalation</dt><dd>Altitude change over the last 3 transmissions. A rising trend under “Rising water” escalates to drowning priority with no user input.</dd></div>
+    <div><dt>Graceful absence</dt><dd>Phones without a barometer are flagged as such, never reported as zero metres.</dd></div>
+  </dl>
+
+  <h3>Battery-adaptive duty cycle</h3>
+  <dl>
+    <div><dt>Interval + PHY ladder</dt><dd>&gt;60% → 1&nbsp;s on Coded PHY. 30–60% → 10&nbsp;s alternating. 10–30% → 60&nbsp;s on 1M. &lt;10% → 300&nbsp;s, sparse — but still broadcasting an accurate next_expected_tx.</dd></div>
+    <div><dt>Honest at every level</dt><dd>A phone at 3% that keeps truthfully declaring a 300-second interval is still fully part of the network. A phone that lies here breaks the whole system.</dd></div>
+  </dl>
+
+  <h3>Confidence &amp; proximity</h3>
+  <dl>
+    <div><dt>Corroboration scoring</dt><dd>Map-cell severity is weighted by how many distinct phones reported it, how many independent relay paths it arrived on, whether the physics is plausible, and whether a verified responder confirmed it. Low-confidence cells render ghosted.</dd></div>
+    <div><dt>Near-damage alert</dt><dd>A phone that finds itself one hop from a collapsed cell tightens its own beacon interval — the network densifies exactly where it matters.</dd></div>
+  </dl>
+
+  <h3>Three interfaces</h3>
+  <dl>
+    <div><dt>Citizen</dt><dd>One headline, one number, three buttons. The count springs and the phone buzzes the instant another phone picks up the signal.</dd></div>
+    <div><dt>Responder</dt><dd>High-contrast daylight list; rows slide to their new rank as triage changes. Dig Here proximity bar with a link-quality readout and a haptic tick at each range band.</dd></div>
+    <div><dt>Map</dt><dd>Severity grid, distinct silence rendering, coverage-gap hints, a “send here first” priority strip, and a replay scrubber.</dd></div>
+  </dl>
+
+  <h3>Demo &amp; scale</h3>
+  <dl>
+    <div><dt>Seeded simulator</dt><dd>500 synthetic nodes over Rasuwagadhi geography, replaying the real toll curve (22 → 95 → 469 → 626 over 72 hours) compressed to about 90 seconds, with a scripted mass-silence event so cell loss fires on cue.</dd></div>
+    <div><dt>Browser EOC viewer</dt><dd>A zero-dependency PWA that imports an exported snapshot and redraws the severity map and triage list — the “last mile” to a laptop at the command post, working from a file with no network.</dd></div>
+    <div><dt>Hidden battery override</dt><dd>A long-press gesture cycles a faked battery level so the duty-cycle ladder can be shown on stage on fully charged phones.</dd></div>
+  </dl>
+</div>
+
+<h2><span class="n">08</span>What we deliberately left out</h2>
+<p>Stated up front, because a limitation you declare is respected and one that is discovered is not.</p>
+<div class="scroller">
+<table>
+  <thead><tr><th>Cut</th><th>Why it is defensible</th></tr></thead>
+  <tbody>
+    <tr><td>iOS devices</td><td>iOS Safari has no Web Bluetooth at all, and native iOS background advertising is locked down by Apple. Two iOS phones would both be listeners and never hear each other. A real deployment needs an Apple entitlement or a hardware beacon.</td></tr>
+    <tr><td>Real cryptographic signatures</td><td>A truncated hash of a per-install key gives the same anti-spoofing story at demo scale without a crypto dependency.</td></tr>
+    <tr><td>RSSI trilateration</td><td>A single proximity bar is enough to convert “this block” into “this 10&nbsp;m circle.” True trilateration needs movement tracking that would not have been finished.</td></tr>
+    <tr><td>A CRDT library</td><td>Merging hash-addressed records by union already is a CRDT. Importing one would add weight and nothing else.</td></tr>
+    <tr><td>The last mile to the internet</td><td>Out of scope by design. The responder’s own phone showing “47 signals in this building, 3 rising-water” is already the whole product, even if it never syncs upstream.</td></tr>
+    <tr><td>Rubble penetration claims</td><td>2.4&nbsp;GHz attenuates hard through concrete and rebar. The answer is not magic range — it is that a pinned phone advertises for days at low power, and a rescuer walking the pile eventually gets within 10&nbsp;m.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="n">09</span>Proven on real hardware</h2>
+<p>Validated on three phones — Samsung Galaxy S23 (trapped), Realme&nbsp;7 (carrier), Motorola Edge&nbsp;50&nbsp;Pro (responder) — in airplane mode, on 2026-08-30.</p>
+<div class="scroller">
+<table>
+  <thead><tr><th>Test</th><th class="mono">Result</th><th>Evidence</th></tr></thead>
+  <tbody>
+    <tr><td>Direct link</td><td class="mono pass">PASS</td><td>Motorola heard both phones at 1 hop, marked LIVE.</td></tr>
+    <tr><td>Coded PHY reception</td><td class="mono pass">PASS</td><td>Both PHYs confirmed received on the Motorola.</td></tr>
+    <tr><td>Store-carry-forward — the demo</td><td class="mono pass">PASS</td><td>S23 with Bluetooth off; its Trapped signal still reached the Motorola at 2 hops, relayed by the Realme.</td></tr>
+    <tr><td>Unexpected silence</td><td class="mono pass">PASS</td><td>S23 at healthy battery, powered off → row went red SILENT with the wall-clock time it went dark.</td></tr>
+    <tr><td>Expected silence</td><td class="mono pass">PASS</td><td>S23 at 8% (declares 300&nbsp;s), powered off → row went grey EXPECTED, no escalation. The two are told apart.</td></tr>
+    <tr><td>Barometer</td><td class="mono warn">PASS · borderline</td><td>One floor read +2&nbsp;m (spec is ~±1&nbsp;m). Sign and magnitude correct; basement/rooftop separation solid.</td></tr>
+    <tr><td>Drowning escalation</td><td class="mono pass">PASS</td><td>“Water rising” + climbing → S23 jumped to the top of the list.</td></tr>
+    <tr><td>Dig Here</td><td class="mono pass">PASS</td><td>Proximity bar tracks walking toward and away.</td></tr>
+    <tr><td>Cell loss</td><td class="mono pass">PASS</td><td>Verified in the 500-node simulator — one cell flips to a hatched, framed “12 dark” hole.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="tight">Outstanding: a 30-minute soak run and a range survey to set the demo walking distance.</p>
+
+<footer>
+  <p><strong>One binary, three roles.</strong> No servers, no internet, no analytics, no downloaded map tiles. It works in airplane mode or it does not ship.</p>
+  <p class="mono">ZONE · NATIVE KOTLIN + JETPACK COMPOSE · minSdk 26 · BLE store-carry-forward · 31-byte packet contract</p>
+</footer>
+
+</main>
+</div>
