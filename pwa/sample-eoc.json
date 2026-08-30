@@ -1,0 +1,13 @@
+{"v":2,"generatedAt":1788000000000,
+ "reports":[
+  {"deviceId":"aabbccddeeff","cell":{"lat":2,"lon":-1},"severity":11,"status":2,"battery":53,"hops":1,"altDelta":4,"altTrend":2,"silence":"ALIVE","lastHeardMs":1200},
+  {"deviceId":"112233445566","cell":{"lat":2,"lon":-1},"severity":9,"status":3,"battery":70,"hops":1,"altDelta":6,"altTrend":3,"silence":"ALIVE","lastHeardMs":800},
+  {"deviceId":"ab12ab12ab12","cell":{"lat":2,"lon":-1},"severity":10,"status":4,"battery":40,"hops":2,"altDelta":2,"altTrend":0,"silence":"OVERDUE","lastHeardMs":22000},
+  {"deviceId":"778899aabbcc","cell":{"lat":-1,"lon":1},"severity":14,"status":2,"battery":4,"hops":2,"altDelta":-3,"altTrend":0,"silence":"UNEXPECTED_SILENCE","lastHeardMs":40000},
+  {"deviceId":"ddeeff001122","cell":{"lat":5,"lon":5},"severity":3,"status":0,"battery":88,"hops":1,"altDelta":-128,"altTrend":0,"silence":"ALIVE","lastHeardMs":500}
+ ],
+ "cellLosses":[{"cell":{"lat":-1,"lon":1},"deviceCount":12,"silentCount":12,"firstSilent":1787999880000,"lastSilent":1787999940000}],
+ "confidence":[
+  {"cell":{"lat":2,"lon":-1},"severity":11,"confidence":0.82,"devices":3,"pathDiversity":2,"verified":false},
+  {"cell":{"lat":5,"lon":5},"severity":3,"confidence":0.12,"devices":1,"pathDiversity":1,"verified":false}
+ ]}

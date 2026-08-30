@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zone — EOC viewer</title>
+<style>
+  :root{
+    --ink:#070a0d; --ink-soft:#10161c; --ink-line:#223038;
+    --bone:#ede8da; --bone-dim:#7c8792; --bone-faint:#3b454e;
+    --signal:#1be7c4; --amber:#f2a93b; --alarm:#ef5b32;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ink);color:var(--bone);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:baseline;gap:14px;padding:16px 18px;flex-wrap:wrap}
+  h1{font-size:22px;margin:0;letter-spacing:.03em}
+  .sub{color:var(--bone-dim);font-size:13px}
+  .alert{color:var(--alarm);font-weight:700;font-size:12px}
+  main{display:grid;grid-template-columns:minmax(320px,1fr) minmax(280px,420px);gap:18px;padding:0 18px 24px}
+  @media(max-width:820px){main{grid-template-columns:1fr}}
+  #mapwrap{background:var(--ink-soft);border-radius:14px;padding:12px}
+  canvas{width:100%;height:auto;display:block}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;color:var(--bone-dim);font-size:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:14px;height:14px;border-radius:3px;display:inline-block}
+  .drop{border:1px dashed var(--ink-line);border-radius:12px;padding:26px;text-align:center;
+    color:var(--bone-dim);margin:0 18px 16px;cursor:pointer}
+  .drop.hot{border-color:var(--signal);color:var(--bone)}
+  ul.triage{list-style:none;margin:0;padding:0}
+  ul.triage li{background:var(--ink-soft);border-radius:10px;padding:10px 12px;margin-bottom:8px;
+    display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center}
+  .rank{font:700 18px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);
+    background:var(--amber);border-radius:6px;padding:8px 0;text-align:center}
+  .st{font-weight:700}
+  .meta{color:var(--bone-dim);font-size:12px}
+  .pill{font-size:11px;font-weight:700;border-radius:6px;padding:4px 8px}
+  .why{grid-column:2/4;color:var(--signal);font-size:11px;font-weight:700}
+  footer{color:var(--bone-faint);font-size:11px;padding:0 18px 24px}
+</style>
+</head>
+<body>
+<header>
+  <h1>SEVERITY MAP</h1>
+  <span class="sub" id="sub">no data loaded</span>
+  <span class="alert" id="alert"></span>
+</header>
+
+<div class="drop" id="drop">drop a <code>thezone-eoc.json</code> here, or click to pick — everything runs offline</div>
+<input type="file" id="file" accept="application/json,.json" hidden>
+
+<main>
+  <section id="mapwrap">
+    <canvas id="map" width="900" height="900"></canvas>
+    <div class="legend">
+      <span><i class="sw" style="background:#223038"></i>no data</span>
+      <span><i class="sw" style="background:#3fa7a0"></i>low</span>
+      <span><i class="sw" style="background:#ef5b32"></i>high</span>
+      <span><i class="sw" style="background:rgba(239,91,50,.28)"></i>unconfirmed</span>
+      <span><i class="sw" style="background:#ede8da"></i>collapsed</span>
+    </div>
+  </section>
+  <section>
+    <ul class="triage" id="triage"></ul>
+  </section>
+</main>
+<footer>Zone EOC viewer — read-only. Field roles run the native app (the web can't hold a radio).</footer>
+
+<script>
+const SEV = t => { // 0..1 -> calm/shoal->amber->alarm
+  const lerp=(a,b,k)=>a.map((v,i)=>Math.round(v+(b[i]-v)*k));
+  const calm=[31,110,123], shoal=[63,167,160], amber=[242,169,59], alarm=[239,91,50];
+  let c = t<.34 ? lerp(calm,shoal,t/.34) : t<.67 ? lerp(shoal,amber,(t-.34)/.33) : lerp(amber,alarm,(t-.67)/.33);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+};
+const hhmm = ms => { const d=new Date(ms); const p=n=>String(n).padStart(2,'0'); return `${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+function render(data){
+  const reports = data.reports||[], losses = data.cellLosses||[], conf = data.confidence||[];
+  const confByCell = {}; conf.forEach(c => confByCell[c.cell.lat+','+c.cell.lon]=c);
+  const lossByCell = {}; losses.forEach(l => lossByCell[l.cell.lat+','+l.cell.lon]=l);
+
+  // cells from reports
+  const cells = {};
+  reports.forEach(r=>{
+    const k=r.cell.lat+','+r.cell.lon;
+    const c=cells[k]||(cells[k]={lat:r.cell.lat,lon:r.cell.lon,n:0,sevSum:0});
+    c.n++; c.sevSum+=r.severity;
+  });
+  const cellList=Object.values(cells);
+  document.getElementById('sub').textContent =
+    `${cellList.length} cells · ${losses.length} collapsed · ${reports.length} reports · ${hhmm(data.generatedAt)}`;
+  document.getElementById('alert').textContent =
+    reports.some(r=>r.silence==='UNEXPECTED_SILENCE') && losses.length ? 'NETWORK ALERT — collapse detected' : '';
+
+  // grid bounds
+  const keys=[...cellList,...losses.map(l=>l.cell)];
+  if(!keys.length){ clearCanvas(); document.getElementById('triage').innerHTML=''; return; }
+  const lat=keys.map(k=>k.lat??k.cell?.lat), lon=keys.map(k=>k.lon??k.cell?.lon);
+  const minLat=Math.min(...cellList.map(c=>c.lat),...losses.map(l=>l.cell.lat))-1;
+  const maxLat=Math.max(...cellList.map(c=>c.lat),...losses.map(l=>l.cell.lat))+1;
+  const minLon=Math.min(...cellList.map(c=>c.lon),...losses.map(l=>l.cell.lon))-1;
+  const maxLon=Math.max(...cellList.map(c=>c.lon),...losses.map(l=>l.cell.lon))+1;
+  const rows=Math.min(maxLat-minLat+1,40), cols=Math.min(maxLon-minLon+1,40);
+
+  const cv=document.getElementById('map'), g=cv.getContext('2d');
+  const S=Math.max(rows,cols)*90; cv.width=cols*90*(cols/Math.max(rows,cols)||1);
+  cv.width=cols*70; cv.height=rows*70;
+  g.clearRect(0,0,cv.width,cv.height);
+  const cw=cv.width/cols, ch=cv.height/rows, gap=Math.min(cw,ch)*0.1;
+
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    const key=(minLat+r)+','+(minLon+c);
+    const x=c*cw, y=(rows-1-r)*ch;
+    const tl=[x+gap,y+gap], sz=[cw-2*gap,ch-2*gap];
+    const loss=lossByCell[key], cell=cells[key];
+    if(loss){ drawLoss(g,tl,sz); labelBig(g,`${loss.deviceCount} dark`, hhmm(loss.lastSilent), tl,sz,'#ede8da'); }
+    else if(cell){
+      const avg=cell.sevSum/cell.n/15;
+      const cf=confByCell[key]?.confidence ?? 1;
+      const a=Math.max(.28,Math.min(.9,.28+.62*cf));
+      roundRect(g,tl,sz,6); g.fillStyle=hexA(SEV(avg),a); g.fill();
+      if(cf<.4){ g.strokeStyle='#7c8792'; g.setLineDash([5,5]); g.lineWidth=1.5; g.stroke(); g.setLineDash([]); }
+      labelBig(g,String(cell.n),null,tl,sz,'#070a0d');
+    } else {
+      roundRect(g,tl,sz,6); g.fillStyle='#070a0d'; g.fill();
+      g.strokeStyle='#223038'; g.lineWidth=1; g.stroke();
+    }
+  }
+  renderTriage(reports, data.generatedAt);
+}
+
+function renderTriage(reports, gen){
+  const JUST_LOST=5*60*1000;
+  const tier=r=>{
+    if(r.status===3 && r.altTrend>0) return 5;
+    if(r.silence==='UNEXPECTED_SILENCE' && r.lastHeardMs<JUST_LOST) return 4;
+    if(r.status===2 && r.altDelta!==-128 && r.altDelta<0) return 3;
+    if(r.battery>=0 && r.battery<10) return 2;
+    return 1;
+  };
+  const why=r=>({5:'rising water, climbing',4:'just went silent',3:'trapped, below grade',2:'battery critical'}[tier(r)]||`severity ${r.severity}`);
+  const rows=[...reports].sort((a,b)=> tier(b)-tier(a) || b.severity-a.severity || a.lastHeardMs-b.lastHeardMs);
+  const pill=s=>({ALIVE:['#1f6e7b','LIVE'],OVERDUE:['#f2a93b','OVERDUE'],EXPECTED_SILENCE:['#d8d2c4','EXPECTED'],UNEXPECTED_SILENCE:['#b5311b','SILENT']}[s]||['#1f6e7b','LIVE']);
+  document.getElementById('triage').innerHTML = rows.map((r,i)=>{
+    const [pb,pt]=pill(r.silence);
+    const alt = r.altDelta===-128 ? 'alt —' : `alt ${r.altDelta>0?'+':''}${r.altDelta}m${r.altTrend>0?'↑':r.altTrend<0?'↓':''}`;
+    return `<li>
+      <span class="rank" style="background:${SEV(r.severity/15)}">${i+1}</span>
+      <span><span class="st">${STATUS[r.status]||'UNKNOWN'}</span><br><span class="meta">${alt} · ${Math.round(r.lastHeardMs/1000)}s ago · ${r.battery}% · ${r.hops} hop</span></span>
+      <span class="pill" style="background:${pb};color:#f6f3ec">${pt}</span>
+      <span class="why">${why(r).toUpperCase()}</span>
+    </li>`;
+  }).join('');
+}
+
+const STATUS={0:'UNKNOWN',1:'SAFE',2:'TRAPPED',3:'RISING WATER',4:'INJURED',5:'HAS SUPPLIES',6:'RESPONDER'};
+
+function roundRect(g,[x,y],[w,h],r){ g.beginPath(); g.moveTo(x+r,y);
+  g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+function drawLoss(g,tl,sz){
+  roundRect(g,tl,sz,4); g.fillStyle='#070a0d'; g.fill();
+  g.save(); g.clip(); g.strokeStyle='rgba(239,91,50,.6)'; g.lineWidth=2;
+  for(let d=-sz[1];d<sz[0];d+=14){ g.beginPath(); g.moveTo(tl[0]+d,tl[1]+sz[1]); g.lineTo(tl[0]+d+sz[1],tl[1]); g.stroke(); }
+  g.restore();
+  roundRect(g,tl,sz,4); g.strokeStyle='#ede8da'; g.lineWidth=3; g.stroke();
+}
+function labelBig(g,text,sub,tl,sz,color){
+  g.fillStyle=color; g.textAlign='center'; g.font=`${Math.min(sz[0],sz[1])*(sub?0.19:0.3)}px ui-monospace,Menlo,monospace`;
+  const cx=tl[0]+sz[0]/2, cy=tl[1]+sz[1]/2, ts=Math.min(sz[0],sz[1])*(sub?0.19:0.3);
+  if(sub){ g.fillText(text,cx,cy-ts*0.1); g.fillText(sub,cx,cy+ts*1.15); }
+  else g.fillText(text,cx,cy+ts/3);
+}
+function hexA(rgb,a){ const m=rgb.match(/\d+/g); return `rgba(${m[0]},${m[1]},${m[2]},${a})`; }
+function clearCanvas(){ const cv=document.getElementById('map'); cv.getContext('2d').clearRect(0,0,cv.width,cv.height); }
+
+// --- file loading ---
+const drop=document.getElementById('drop'), file=document.getElementById('file');
+drop.onclick=()=>file.click();
+file.onchange=e=>{ const f=e.target.files[0]; if(f) f.text().then(load); };
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) f.text().then(load); });
+function load(txt){ try{ render(JSON.parse(txt)); }catch(err){ document.getElementById('sub').textContent='bad JSON: '+err.message; } }
+</script>
+</body>
+</html>

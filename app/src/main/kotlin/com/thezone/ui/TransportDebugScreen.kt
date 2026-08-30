@@ -125,6 +125,11 @@ fun TransportDebugScreen() {
             OutlinedButton(onClick = { TransportController.clearReceived() }) {
                 Text("Clear")
             }
+            OutlinedButton(onClick = {
+                val f = java.io.File(context.getExternalFilesDir(null), "thezone-eoc.json")
+                f.writeText(TransportController.exportEoc())
+                android.util.Log.i("TheZone", "EOC export -> ${f.absolutePath}")
+            }) { Text("Export EOC") }
         }
 
         Header("Battery override (fake the ladder)")

@@ -68,6 +68,37 @@ object TransportController {
     /** True when a confirmed collapse is inside this device's radio horizon. */
     val nearDamage: Boolean get() = com.thezone.demo.NetworkAlert.nearDamage
 
+    /**
+     * A self-contained JSON snapshot of the EOC view — reports, cell losses,
+     * confidence — for the offline PWA viewer (pwa/eoc.html). Pre-computed;
+     * the viewer is purely presentational.
+     */
+    fun exportEoc(): String {
+        fun cell(c: com.thezone.core.GridCell) = """{"lat":${c.latIndex},"lon":${c.lonIndex}}"""
+        val now = System.currentTimeMillis()
+        val silenceByDev = silence.snapshot().associateBy { it.deviceIdHex }
+
+        val reports = store.all().filterNot { it.isOwn }.joinToString(",") { r ->
+            val dev = r.packet.deviceId.toHex()
+            val gc = com.thezone.core.GridCells.of(r.packet.deltaLat, r.packet.deltaLon)
+                ?: com.thezone.core.GridCells.fallback(dev)
+            val st = silenceByDev[dev]?.state?.name ?: "ALIVE"
+            """{"deviceId":"$dev","cell":${cell(gc)},"severity":${r.packet.severity},""" +
+                """"status":${r.packet.status},"battery":${BatteryScale.nibbleToPercent(r.packet.batteryLevel)},""" +
+                """"hops":${r.hopsFromOrigin},"altDelta":${r.packet.altDelta},"altTrend":${r.packet.altTrend},""" +
+                """"silence":"$st","lastHeardMs":${now - r.lastHeardAtMillis}}"""
+        }
+        val cls = silence.cellLosses().joinToString(",") { l ->
+            """{"cell":${cell(l.cell)},"deviceCount":${l.deviceCount},"silentCount":${l.silentCount},""" +
+                """"firstSilent":${l.firstSilentAtMillis},"lastSilent":${l.lastSilentAtMillis}}"""
+        }
+        val conf = cellConfidence.joinToString(",") { c ->
+            """{"cell":${cell(c.cell)},"severity":${c.severity},"confidence":${"%.3f".format(c.confidence)},""" +
+                """"devices":${c.distinctDevices},"pathDiversity":${c.pathDiversity},"verified":${c.hasVerifiedReporter}}"""
+        }
+        return """{"v":2,"generatedAt":$now,"reports":[$reports],"cellLosses":[$cls],"confidence":[$conf]}"""
+    }
+
     /** Dead Man's Packet — per-device silence state, the transition log, cell losses. */
     val silenceDevices: List<DeviceSilence> get() = silence.snapshot()
     val silenceTransitions: List<SilenceTransition> get() = silence.transitions()
