@@ -45,7 +45,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,13 +127,13 @@ fun MapScreen() {
             Text(
                 if (live) "LIVE" else "REPLAY ${clock(tAt)}",
                 color = if (live) Zone.signal else Zone.amber,
-                fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+                fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono,
             )
         }
         if (scenario != null) {
             Text(
                 "Rasuwa replay · toll ${scenario.second} · ${(scenario.first * 100).toInt()}%",
-                color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                color = Zone.boneFaint, fontSize = 11.sp, fontFamily = Zone.mono,
             )
         }
 
@@ -163,7 +162,7 @@ fun MapScreen() {
                 MapGrid(cells, losses, pulse, ripple)
                 Text(
                     "N ↑", color = Zone.boneDim, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = Zone.mono,
                     modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
                 )
             }
@@ -186,7 +185,7 @@ fun MapScreen() {
 
         if (tMax - tMin > 30_000L) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (live) "replay ‹" else "‹ live", color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text(if (live) "replay ‹" else "‹ live", color = Zone.boneFaint, fontSize = 11.sp, fontFamily = Zone.mono)
                 Slider(
                     value = scrub,
                     onValueChange = { scrub = it },
@@ -197,7 +196,7 @@ fun MapScreen() {
                         inactiveTrackColor = Zone.inkLine,
                     ),
                 )
-                Text(if (live) "now" else clock(tAt), color = Zone.boneFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text(if (live) "now" else clock(tAt), color = Zone.boneFaint, fontSize = 11.sp, fontFamily = Zone.mono)
             }
         }
     }
@@ -208,7 +207,7 @@ fun MapScreen() {
 @Composable
 private fun Stat(label: String, value: Int, color: Color) {
     Column {
-        Text("$value", color = color, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("$value", color = color, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
         Text(label, color = Zone.boneDim, fontSize = 9.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -252,7 +251,7 @@ private fun PriorityCard(p: Priority) {
     ) {
         Text(p.eyebrow, color = p.eyebrowColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Text("cell ${p.cell.latIndex}, ${p.cell.lonIndex}", color = Zone.bone, fontSize = 15.sp,
-            fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold, fontFamily = Zone.mono,
             maxLines = 1)
         Text(p.line, color = Zone.boneDim, fontSize = 12.sp, maxLines = 1)
     }

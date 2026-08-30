@@ -2,6 +2,7 @@ package com.thezone.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontFamily
 
 /**
  * Brand-neutral palette derived from the subject: a sonar / bathymetric display.
@@ -29,6 +30,9 @@ object Zone {
     val amber = Color(0xFFF2A93B)
     val alarm = Color(0xFFEF5B32)
     val alarmDeep = Color(0xFFB5311B)
+
+    val sans: FontFamily = PlexSans
+    val mono: FontFamily = PlexMono
 
     // --- daylight surfaces: Responder (gloves, sun, one hand) ---
     val paper = Color(0xFFF6F3EC)

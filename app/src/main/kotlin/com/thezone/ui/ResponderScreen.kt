@@ -1,6 +1,9 @@
 package com.thezone.ui
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,14 +23,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,7 +79,7 @@ fun ResponderScreen() {
         ) {
             Text("HEARD", color = Zone.paper, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(10.dp))
-            Text("${rows.size}", color = Zone.signal, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Text("${rows.size}", color = Zone.signal, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
             Spacer(Modifier.weight(1f))
             if (rising > 0) Tag("$rising RISING", Zone.alarm, Zone.paper)
             if (silent > 0) { Spacer(Modifier.width(8.dp)); Tag("$silent SILENT", Zone.alarmDeep, Zone.paper) }
@@ -93,7 +97,14 @@ fun ResponderScreen() {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(rows.size, key = { rows[it].deviceIdHex }) { i ->
-                ResponderRow(rank = i + 1, e = rows[i], now = now) { digTarget = rows[i].deviceIdHex }
+                ResponderRow(
+                    rank = i + 1,
+                    e = rows[i],
+                    now = now,
+                    modifier = Modifier.animateItem(
+                        placementSpec = tween(420, easing = FastOutSlowInEasing),
+                    ),
+                ) { digTarget = rows[i].deviceIdHex }
             }
         }
     }
@@ -107,9 +118,15 @@ private fun Tag(text: String, bg: androidx.compose.ui.graphics.Color, fg: androi
 }
 
 @Composable
-private fun ResponderRow(rank: Int, e: TriageEntry, now: Long, onTap: () -> Unit) {
+private fun ResponderRow(
+    rank: Int,
+    e: TriageEntry,
+    now: Long,
+    modifier: Modifier = Modifier,
+    onTap: () -> Unit,
+) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(Zone.paperPanel)
@@ -122,7 +139,7 @@ private fun ResponderRow(rank: Int, e: TriageEntry, now: Long, onTap: () -> Unit
             Modifier.fillMaxHeight().width(52.dp).background(Zone.severity(e.severity)),
             contentAlignment = Alignment.Center,
         ) {
-            Text("$rank", color = Zone.paper, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Text("$rank", color = Zone.paper, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -179,6 +196,19 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
         else -> "FAR"
     }
 
+    // a physical tick each time you cross a proximity band — eyes can stay on the rubble
+    val view = LocalView.current
+    var prevWord by remember { mutableStateOf(word) }
+    LaunchedEffect(word) {
+        if (word != prevWord) {
+            view.performHapticFeedback(
+                if (word == "VERY CLOSE") HapticFeedbackConstants.LONG_PRESS
+                else HapticFeedbackConstants.CONTEXT_CLICK,
+            )
+            prevWord = word
+        }
+    }
+
     val fillColor = if (fill > 0.55f) Zone.alarm else Zone.amber
 
     Column(
@@ -190,10 +220,10 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
         // readout — always at the top, so the layout is full at any fill level
         Spacer(Modifier.height(10.dp))
         Text(word, color = Zone.paperInk, fontSize = 52.sp, fontWeight = FontWeight.Bold)
-        Text("≈ $metres m", color = fillColor, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("≈ $metres m", color = fillColor, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
         Text("$linkText  ·  $rssi dBm  ·  heard ${(heardAgoMs / 1000).coerceAtMost(999)}s ago",
             color = linkColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Text("dev ${deviceIdHex.take(12)}", color = Zone.paperDim, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        Text("dev ${deviceIdHex.take(12)}", color = Zone.paperDim, fontFamily = Zone.mono, fontSize = 12.sp)
 
         Spacer(Modifier.height(16.dp))
 

@@ -8,6 +8,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -63,7 +65,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            MaterialTheme(typography = com.thezone.ui.theme.zoneTypography()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Root()
                 }
@@ -112,13 +114,16 @@ private fun Root() {
                     detectTapGestures(onLongPress = { showSwitcher = true })
                 },
         ) {
-            when (current) {
-                AppMode.CITIZEN -> CitizenScreen()
-                AppMode.RESPONDER -> ResponderScreen()
-                AppMode.MAP -> MapScreen()
+            Crossfade(targetState = current, animationSpec = tween(360), label = "mode") { m ->
+                when (m) {
+                    AppMode.CITIZEN -> CitizenScreen()
+                    AppMode.RESPONDER -> ResponderScreen()
+                    AppMode.MAP -> MapScreen()
+                }
             }
             if (showSwitcher) {
                 ModeSwitcher(
+                    current = current,
                     onPick = {
                         ModeStore.set(context, it)
                         mode = it
@@ -197,6 +202,7 @@ private fun ModePicker(onPick: (AppMode) -> Unit) {
 
 @Composable
 private fun ModeSwitcher(
+    current: AppMode,
     onPick: (AppMode) -> Unit,
     onDebug: () -> Unit,
     onDismiss: () -> Unit,
@@ -219,7 +225,11 @@ private fun ModeSwitcher(
             )
             Spacer(Modifier.height(14.dp))
             AppMode.entries.forEach { m ->
-                ZoneButton(m.label, filled = true, modifier = Modifier.padding(vertical = 5.dp)) { onPick(m) }
+                ZoneButton(
+                    if (m == current) "${m.label}  ·  on" else m.label,
+                    filled = m == current,
+                    modifier = Modifier.padding(vertical = 5.dp),
+                ) { onPick(m) }
             }
             Spacer(Modifier.height(10.dp))
             ZoneButton("Debug (H0 / H2)", filled = false) { onDebug() }
