@@ -36,6 +36,18 @@ Probe APK: `com.thezone.probe.debug` / `MainActivity` (H0 scaffold).
 
 **All three support Coded PHY + extended advertising** → dual-mode works everywhere, no partition by handset.
 
+### H2 transport smoke test (2026-08-30)
+
+Single-phone, via the "H2 Transport" tab → BLE → Start. Follow with `adb logcat -s TheZone`.
+
+| Phone | FGS starts | scan LOW_LATENCY | Coded set | 1M set | notes |
+|---|---|---|---|---|---|
+| Samsung Galaxy S23 | yes | yes | started (txPower +1 dBm) | started | Simulated mode also decoded 3 peers |
+| Realme 7 | yes | yes | started (txPower −2 dBm) | started | API 30 — only FINE_LOCATION gates it |
+| Motorola Edge 50 Pro | _pending_ | | | | |
+
+**Two-phone air path (A advertises → B receives + decodes) not yet run — that is the H2 checkpoint.**
+
 **Barometer is the constraint:** only the S23 has one. So role assignment is forced:
 
 ```
