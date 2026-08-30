@@ -25,7 +25,10 @@ class BleForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
-        if (TransportController.bleTransport() == null) {
+        // Keep whatever transport is active alive across a screen lock — including
+        // Simulated / File, so the "BLE won't link, switch to the simulator"
+        // failure drill survives the phone locking mid-demo.
+        if (TransportController.kind == "none") {
             TransportController.useBle(applicationContext)
         }
         TransportController.start(applicationContext)

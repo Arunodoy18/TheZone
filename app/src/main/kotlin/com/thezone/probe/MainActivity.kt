@@ -154,14 +154,11 @@ private fun PermissionGate(content: @Composable () -> Unit) {
         return
     }
 
-    // permissions in hand — default to the BLE foreground service, but leave a
-    // simulator/file transport in place if one was already selected via debug
-    // (the demo's failure drill: "switch to SimulatedTransport from the picker").
+    // permissions in hand — start the foreground service, which keeps whatever
+    // transport is active alive (BLE by default; a Simulated/File one picked via
+    // debug is left in place — the demo's failure drill).
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (TransportController.kind == "none" || TransportController.kind == "BLE") {
-            if (TransportController.bleTransport() == null) TransportController.useBle(context)
-            BleForegroundService.start(context)
-        }
+        BleForegroundService.start(context)
     }
     content()
 }

@@ -109,11 +109,8 @@ fun TransportDebugScreen() {
             Button(
                 enabled = missing.isEmpty() || TransportController.kind != "BLE",
                 onClick = {
-                    if (TransportController.kind == "BLE") {
-                        BleForegroundService.start(context)
-                    } else {
-                        TransportController.start(context)
-                    }
+                    // The foreground service keeps any transport alive across a lock.
+                    BleForegroundService.start(context)
                 },
             ) { Text("Start") }
 

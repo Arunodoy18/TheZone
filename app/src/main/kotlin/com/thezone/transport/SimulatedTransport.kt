@@ -119,9 +119,14 @@ class SimulatedTransport(
             }
         }
 
-        // A dedicated, tightly-packed "doomed building" so the whole of it fits
-        // one grid cell and can go 100% silent -> a clean CELL_LOSS.
-        val doomedCentre = intArrayOf(rng.nextInt(-600, 600), rng.nextInt(-600, 600))
+        // A dedicated "doomed building": every node at the exact centre of one
+        // grid cell, well away from the other clusters, so that cell can read
+        // 100% silent -> a clean, unambiguous CELL_LOSS.
+        val cell = 90
+        val doomedCentre = intArrayOf(
+            (rng.nextInt(-6, 7) * cell) + cell / 2,
+            (rng.nextInt(-6, 7) * cell) + cell / 2,
+        )
         val doomedCount = minOf(DOOMED_COUNT, nodeCount / 4)
 
         val list = ArrayList<SimNode>(nodeCount)
@@ -129,7 +134,7 @@ class SimulatedTransport(
             val doomed = i >= nodeCount - doomedCount
             val cluster = if (doomed) CLUSTER_COUNT else i % CLUSTER_COUNT
             val centre = if (doomed) doomedCentre else clusters[cluster]
-            val spread = if (doomed) 30 else SPREAD
+            val spread = if (doomed) 0 else SPREAD
             val key = ByteArray(DeviceIdentity.KEY_BYTES) { rng.nextInt().toByte() }
             val identity = DeviceIdentity(key)
 
@@ -155,6 +160,18 @@ class SimulatedTransport(
                 silentAtT = null,
                 startOffsetMillis = rng.nextLong(0, 3_000),
             )
+        }
+
+        // Guarantee the doomed cell holds only doomed nodes: nudge any stray
+        // background node out of it (rare, but it would dilute the 80% rule).
+        val doomedCell = intArrayOf(Math.floorDiv(doomedCentre[0], cell), Math.floorDiv(doomedCentre[1], cell))
+        list.forEachIndexed { i, n ->
+            if (i < nodeCount - doomedCount &&
+                Math.floorDiv(n.deltaLat, cell) == doomedCell[0] &&
+                Math.floorDiv(n.deltaLon, cell) == doomedCell[1]
+            ) {
+                n.deltaLat += cell * 2
+            }
         }
 
         scriptEvents(list)
@@ -194,7 +211,7 @@ class SimulatedTransport(
 
     class SimNode(
         private val identity: DeviceIdentity,
-        val deltaLat: Int,
+        var deltaLat: Int,
         val deltaLon: Int,
         val cluster: Int,
         val severeAtT: Double,
