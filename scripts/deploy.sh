@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
-PKG="com.thezone.probe.debug"
+PKG="com.thezone.debug"
 APK="app/build/outputs/apk/debug/app-debug.apk"
 LAUNCH="${1:-}"
 
