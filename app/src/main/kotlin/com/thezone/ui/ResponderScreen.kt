@@ -145,7 +145,10 @@ private fun ResponderRow(
         Column(Modifier.weight(1f)) {
             Text(statusLabel(e.status), color = Zone.paperInk, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text(
-                "${altLabel(e)}   ${agoLabel(now - e.lastHeardAtMillis)}   ${e.batteryPercent}%   ${e.hopsFromOrigin} hop",
+                buildString {
+                    append("${altLabel(e)}   ${agoLabel(now - e.lastHeardAtMillis)}   ${e.batteryPercent}%   ${e.hopsFromOrigin} hop")
+                    if (e.casualties > 0) append("   " + (if (e.casualties >= 15) "15+" else e.casualties.toString()) + " ppl")
+                },
                 color = Zone.paperDim, fontSize = 14.sp,
             )
             Text(TriageScorer.reason(e, now).uppercase(), color = Zone.calm, fontSize = 12.sp, fontWeight = FontWeight.Bold)

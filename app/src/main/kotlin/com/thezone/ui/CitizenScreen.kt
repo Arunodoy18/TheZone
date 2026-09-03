@@ -145,16 +145,19 @@ fun CitizenScreen() {
             )
         }
 
-        Row(
+        Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            StatusButton("Trapped", Status.TRAPPED_DEBRIS.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
-            StatusButton("Water\nrising", Status.RISING_WATER.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
-            StatusButton("Safe", Status.SAFE.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
+            HeadcountRow()
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatusButton("Trapped", Status.TRAPPED_DEBRIS.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
+                StatusButton("Water\nrising", Status.RISING_WATER.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
+                StatusButton("Safe", Status.SAFE.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
+            }
         }
 
         // hidden: long-press the bottom-left corner to cycle the fake battery level
@@ -168,6 +171,51 @@ fun CitizenScreen() {
 }
 
 private fun toggle(current: Int?, tapped: Int): Int? = if (current == tapped) null else tapped
+
+/** Optional "how many people are with you" — feeds the packet's casualty count. */
+@Composable
+private fun HeadcountRow() {
+    val view = LocalView.current
+    var n by remember { mutableIntStateOf(com.thezone.demo.SelfReport.headcount) }
+    fun set(v: Int) {
+        n = v.coerceIn(0, 15)
+        com.thezone.demo.SelfReport.headcount = n
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Zone.inkSoft)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            if (n == 0) "people with you" else if (n >= 15) "15+ with you" else "$n with you",
+            color = Zone.boneDim, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StepBtn("–") { set(n - 1) }
+            StepBtn("+") { set(n + 1) }
+        }
+    }
+}
+
+@Composable
+private fun StepBtn(label: String, onTap: () -> Unit) {
+    Box(
+        Modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Zone.inkLine)
+            .pointerInput(label) { detectTapGestures(onTap = { onTap() }) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Zone.bone, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+    }
+}
 
 @Composable
 private fun androidx.compose.foundation.layout.RowScope.StatusButton(

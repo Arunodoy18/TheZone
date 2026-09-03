@@ -27,3 +27,16 @@ object UserStatus {
     var code: Int? = null
 }
 
+/**
+ * Optional self-reported detail from the Citizen screen. [headcount] feeds the
+ * packet's casualty nibble (0..15, 15 = "15 or more"); 0 = not stated. Triage
+ * uses it to break ties toward cells with more people.
+ */
+object SelfReport {
+    @Volatile
+    var headcount: Int = 0
+        set(value) {
+            field = value.coerceIn(0, 15)
+        }
+}
+

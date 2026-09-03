@@ -71,7 +71,7 @@ object HeartbeatSource {
             deltaLon = deltaLon,
             status = status,
             severity = 0,
-            casualties = 0,
+            casualties = com.thezone.demo.SelfReport.headcount,
             timestampMinutes = EventClock.stampMinutes(nowMillis),
             batteryLevel = batteryLevel,
             hopCount = 0,
