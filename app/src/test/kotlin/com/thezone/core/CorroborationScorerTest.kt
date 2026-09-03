@@ -52,11 +52,35 @@ class CorroborationScorerTest {
     }
 
     @Test
-    fun aVerifiedReporterLiftsConfidenceRegardlessOfCount() {
-        val cells = CorroborationScorer.scoreCells(listOf(report(status = Status.RESPONDER.code)))
-        val c = cells.single()
-        assertTrue(c.hasVerifiedReporter)
-        assertTrue("verified: ${c.confidence}", c.confidence >= 0.25)
+    fun aLoneUnverifiedResponderClaimAddsNothing() {
+        // no signatures in this build — a bare RESPONDER byte with no corroboration
+        // is worth exactly as much as any other lone plausible phone, no bonus
+        val responder = CorroborationScorer.scoreCells(listOf(report(status = Status.RESPONDER.code))).single()
+        val ordinary = CorroborationScorer.scoreCells(listOf(report(status = Status.INJURED.code))).single()
+        assertTrue(responder.hasVerifiedReporter)
+        assertEquals(ordinary.confidence, responder.confidence, 1e-9)
+    }
+
+    @Test
+    fun aCorroboratedResponderLiftsConfidence() {
+        val alone = CorroborationScorer.scoreCells(listOf(report(status = Status.RESPONDER.code))).single()
+        val corroborated = CorroborationScorer.scoreCells(
+            listOf(report(status = Status.RESPONDER.code)) + List(2) { report() },
+        ).single()
+        assertTrue(corroborated.hasVerifiedReporter)
+        assertTrue(
+            "corroborated ${corroborated.confidence} vs alone ${alone.confidence}",
+            corroborated.confidence > alone.confidence + 0.2,
+        )
+    }
+
+    @Test
+    fun sybilFloodOfImplausiblePacketsDoesNotInflateConfidence() {
+        // 8 fabricated ids, all physically impossible (alt pinned at the clamp)
+        val flood = List(8) { report(status = Status.RISING_WATER.code, altTrend = -9, altDelta = 127) }
+        val c = CorroborationScorer.scoreCells(flood).single()
+        assertEquals(8, c.implausibleReports)
+        assertTrue("junk flood confidence ${c.confidence}", c.confidence < 0.1)
     }
 
     @Test
