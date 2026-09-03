@@ -36,11 +36,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.thezone.config.IncidentConfig
 import com.thezone.core.SilenceState
 import com.thezone.demo.DebugOverrides
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.Packet
 import com.thezone.sensors.Altitude
+import com.thezone.sensors.Position
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
 import com.thezone.transport.toHex
@@ -157,6 +159,31 @@ fun TransportDebugScreen() {
         KeyVal("trend / rising", "${Altitude.trendMeters} m  /  ${Altitude.rising}")
         KeyVal("baseline alt", Altitude.baselineMeters?.let { "%.1f m".format(it) } ?: "—")
         OutlinedButton(onClick = { Altitude.resetBaseline() }) { Text("Reset baseline (I'm at ground)") }
+
+        Header("Location / incident origin")
+        val fix = Position.snapshot()
+        KeyVal(
+            "device fix",
+            fix?.let {
+                "%.5f, %.5f  ±%.0fm  %ds old".format(
+                    it.lat, it.lon, it.accuracyMeters, it.ageMillis() / 1000,
+                )
+            } ?: "no fix yet",
+        )
+        KeyVal(
+            "origin",
+            "%.5f, %.5f  %s".format(
+                IncidentConfig.originLat(context), IncidentConfig.originLon(context),
+                if (IncidentConfig.usingDefault(context)) "(default)" else "(set)",
+            ),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                enabled = fix != null,
+                onClick = { fix?.let { IncidentConfig.setOrigin(context, it.lat, it.lon) } },
+            ) { Text("Set origin = my fix") }
+            OutlinedButton(onClick = { IncidentConfig.reset(context) }) { Text("Reset origin") }
+        }
 
         val ble = TransportController.bleTransport()
         if (ble != null) {

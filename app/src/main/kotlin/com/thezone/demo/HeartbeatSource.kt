@@ -2,30 +2,45 @@ package com.thezone.demo
 
 import android.content.Context
 import android.os.BatteryManager
+import com.thezone.config.IncidentConfig
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.BatteryScale
 import com.thezone.packet.EventClock
+import com.thezone.packet.GeoPosition
 import com.thezone.packet.Packet
 import com.thezone.packet.PacketCodec
 import com.thezone.packet.Status
 import com.thezone.sensors.Altitude
+import com.thezone.sensors.Position
 
 /**
- * H2 PLACEHOLDER. Builds the 31-byte packet this phone broadcasts so the
- * advertiser has something real to send while we prove the radio out.
+ * Builds the 31-byte heartbeat this phone broadcasts (docs/PACKET_SPEC.md).
  *
- * It only wires up what H2 needs: this device's identity, live battery level, and
- * the duty-cycle `next_expected_tx` ladder. Position is no-fix, altitude is
- * no-barometer, status is UNKNOWN. H4 (Dead Man's Packet) and H5 (barometer)
- * replace this with the real heartbeat.
+ * Wires the live inputs: identity, battery + the duty-cycle `next_expected_tx`
+ * ladder, barometric altitude ([Altitude]), and position — the best-effort GPS
+ * fix ([Position]) as a delta from the incident origin ([IncidentConfig]), or
+ * NO_FIX when there's no fresh fix (a no-fix device is localised from its relay
+ * path). Status is a user assertion if there is one, else sensor-derived.
  */
 object HeartbeatSource {
+
+    /** A fix older than this is dropped — send NO_FIX and let relay-path localisation take over. */
+    private const val POSITION_MAX_AGE_MS = 10L * 60 * 1000
 
     fun current(context: Context, nowMillis: Long = System.currentTimeMillis()): ByteArray {
         val identity = DeviceKeyStore.identity(context)
         val batteryPercent =
             com.thezone.demo.DebugOverrides.batteryPercentOverride ?: readBatteryPercent(context)
         val batteryLevel = BatteryScale.percentToNibble(batteryPercent)
+
+        // position: a fresh fix -> delta from the incident origin, else NO_FIX
+        val fix = Position.snapshot()
+        val (deltaLat, deltaLon) = if (fix != null && fix.ageMillis(nowMillis) <= POSITION_MAX_AGE_MS) {
+            GeoPosition.encodeDelta(fix.lat, IncidentConfig.originLat(context)) to
+                GeoPosition.encodeDelta(fix.lon, IncidentConfig.originLon(context))
+        } else {
+            Packet.NO_FIX to Packet.NO_FIX
+        }
 
         // A user assertion (Citizen buttons) wins; otherwise status is
         // sensor-derived — a rising barometric trend infers RISING_WATER
@@ -37,8 +52,8 @@ object HeartbeatSource {
             version = Packet.PROTOCOL_VERSION,
             type = Packet.TYPE_STATUS,
             deviceId = identity.deviceId,
-            deltaLat = Packet.NO_FIX,
-            deltaLon = Packet.NO_FIX,
+            deltaLat = deltaLat,
+            deltaLon = deltaLon,
             status = status,
             severity = 0,
             casualties = 0,

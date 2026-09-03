@@ -17,6 +17,7 @@ import com.thezone.packet.BatteryScale
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.PacketCodec
 import com.thezone.persistence.StatePersistence
+import com.thezone.sensors.LocationReader
 import com.thezone.sensors.PressureReader
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -48,6 +49,7 @@ object TransportController {
     private var lastAdvertisedHex: String? = null
     private var appContext: Context? = null
     private var pressureReader: PressureReader? = null
+    private var locationReader: LocationReader? = null
 
     // Tier 0 crash safety: snapshot the store + collapses to disk on a debounce
     // so a reboot / OS kill mid-incident doesn't start a carrier phone blank.
@@ -178,6 +180,8 @@ object TransportController {
         loadPersisted(appContext!!)
         if (pressureReader == null) pressureReader = PressureReader(appContext!!)
         pressureReader?.start()
+        if (locationReader == null) locationReader = LocationReader(appContext!!)
+        locationReader?.start()
         transport?.start()
         startPump()
         ping()
@@ -189,6 +193,7 @@ object TransportController {
         lastAdvertisedHex = null
         appContext?.let { saveNow(it) }
         pressureReader?.stop()
+        locationReader?.stop()
         transport?.stop()
         ping()
     }
