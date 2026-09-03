@@ -118,10 +118,14 @@ app/src/main/kotlin/com/thezone/
   sensors/      PressureReader -> Altitude (relative, EMA-smoothed, trend)
   ui/           CitizenScreen  ·  ResponderScreen + DigHereScreen  ·  MapScreen  ·  theme/
   probe/        MainActivity — mode router, permission gate, H0/H2 debug host
-app/src/test/   56 JVM unit tests (no Android deps in core/ or packet/)
-pwa/            offline landing page + browser EOC viewer + staged zone.apk  (Netlify: publish = pwa)
+  config/       IncidentConfig (position origin, shared responder key) · LangStore
+  persistence/  StatePersistence — crash-safe JSON snapshot of the store + collapses
+  diagnostics/  CrashLog — on-device crash file, no analytics
+app/src/test/   78 JVM unit tests (no Android deps in core/ or packet/)
+pwa/            offline landing page + browser EOC viewer (?live= auto-refresh) + staged zone.apk  (Netlify: publish = pwa)
 docs/           specs, build plan, field checklist, explainer
-scripts/        deploy / release / pdf helpers
+scripts/        deploy / release / eoc-watch / pdf helpers
+.github/        CI — unit tests + assembleDebug on push
 ```
 
 `core/` and `packet/` have zero Android imports and run on the plain JVM.
@@ -144,17 +148,29 @@ scripts/        deploy / release / pdf helpers
 
 ## Status
 
-Validated on three real phones in airplane mode (2026-08-30): direct link,
-2-hop store-carry-forward, expected vs unexpected silence told apart, barometric
-floor detection, drowning escalation, Dig Here, and cell loss in a 500-node
-simulator replaying the real Rasuwagadhi toll curve (22 → 95 → 469 → 626 over
-72 h). Outstanding: a 30-minute soak run and a range survey.
+**Hackathon build (v0.1)** — validated on three real phones in airplane mode
+(2026-08-30): direct link, 2-hop store-carry-forward, expected vs unexpected
+silence told apart, barometric floor detection, drowning escalation, Dig Here,
+and cell loss in a 500-node simulator replaying the real Rasuwagadhi toll curve
+(22 → 95 → 469 → 626 over 72 h).
+
+**v0.3** adds crash-safe persistence, a real GPS position with a configurable
+incident origin, inferred `TRAPPED` from sustained immobility, a real app
+identity + icon, Sybil-resistant scoring, an on-device crash log, a "Keep Zone
+alive" battery-setup screen, a pre-shared responder key (verifiable `RESPONDER`
+packets, no crypto library), a `RESOLVE` packet type (mesh-wide "reached"),
+hot/cold Dig Here, an optional headcount, continuous live-EOC auto-export + an
+auto-refreshing viewer, a sneakernet mesh-state file, the Citizen screen in
+Hindi/Nepali, and CI. Single-phone re-check on the Realme 7 (2026-09-04): GPS,
+battery ladder, responder key, no crashes. The mesh half re-runs on three phones.
+Outstanding: a 30-minute soak run and a range survey.
 
 **Known limits (stated on purpose):** iOS cannot participate (no Web Bluetooth on
 Safari; native background advertising is locked down — needs an Apple entitlement
 or a hardware beacon). 2.4 GHz penetrates rubble poorly — the answer is a pinned
 phone advertising for days at low duty cycle until a rescuer walks within ~10 m.
-Device identity is a truncated hash of a per-install key, not real crypto.
+The `RESPONDER` tier verifies against a pre-shared key; full per-device
+signatures would need a crypto library and more than 31 bytes.
 
 ---
 

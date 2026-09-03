@@ -458,6 +458,7 @@
   <h3>Confidence &amp; proximity</h3>
   <dl>
     <div><dt>Corroboration scoring</dt><dd>Map-cell severity is weighted by how many distinct phones reported it, how many independent relay paths it arrived on, whether the physics is plausible, and whether a verified responder confirmed it. Low-confidence cells render ghosted.</dd></div>
+    <div><dt>Sybil resistance</dt><dd>Only physically-plausible reports feed the device count, so a flood of packets from fabricated ids can’t inflate a cell. A bare “responder” byte earns nothing — trust comes only from a responder packet that verifies against the shared key.</dd></div>
     <div><dt>Near-damage alert</dt><dd>A phone that finds itself one hop from a collapsed cell tightens its own beacon interval — the network densifies exactly where it matters.</dd></div>
   </dl>
 
@@ -471,8 +472,22 @@
   <h3>Demo &amp; scale</h3>
   <dl>
     <div><dt>Seeded simulator</dt><dd>500 synthetic nodes over Rasuwagadhi geography, replaying the real toll curve (22 → 95 → 469 → 626 over 72 hours) compressed to about 90 seconds, with a scripted mass-silence event so cell loss fires on cue.</dd></div>
-    <div><dt>Browser EOC viewer</dt><dd>A zero-dependency PWA that imports an exported snapshot and redraws the severity map and triage list — the “last mile” to a laptop at the command post, working from a file with no network.</dd></div>
+    <div><dt>Browser EOC viewer</dt><dd>A zero-dependency PWA that draws the severity map and triage list from a snapshot. Opened as <span class="mono">?live=eoc.json</span> it polls a same-origin file every 3&nbsp;s — the phone rewrites that snapshot every 4&nbsp;s, so a laptop at the command post tracks the field with no network.</dd></div>
     <div><dt>Hidden battery override</dt><dd>A long-press gesture cycles a faked battery level so the duty-cycle ladder can be shown on stage on fully charged phones.</dd></div>
+  </dl>
+
+  <h3>Since the hackathon build (v0.3)</h3>
+  <dl>
+    <div><dt>Crash-safe state</dt><dd>The store, the confirmed collapses and the silence tracks are written to disk and reloaded on start, so a reboot or an OS kill mid-incident doesn’t wipe a carrier phone. Atomic write, 24&nbsp;h age cutoff.</dd></div>
+    <div><dt>Real position</dt><dd>The heartbeat sends an actual GPS fix (last-known, no Play Services, no network) as a delta from a configurable per-incident origin — falling back to no-fix, where the relay path localises the device.</dd></div>
+    <div><dt>Inferred TRAPPED</dt><dd>A phone held dead still for five minutes, with no user input, broadcasts <span class="mono">TRAPPED_DEBRIS</span> — the “works when unconscious” claim, made true.</dd></div>
+    <div><dt>Pre-shared responder key</dt><dd>A responder phone provisioned with a shared secret signs its packets with a SHA-256 MAC any phone can verify (no crypto library). A forged “responder” is rejected; a real one lifts a cell’s confidence.</dd></div>
+    <div><dt>RESOLVE</dt><dd>A responder marks a signal reached — a signed type-1 packet carrying the target’s content-id. It rides the same store-carry-forward, and every phone and the EOC drop that report, so the picture converges on who still needs help.</dd></div>
+    <div><dt>Hot / cold Dig&nbsp;Here</dt><dd>A least-squares fit over the RSSI slope while the responder walks — WARMER / HOLDING / COLDER — so the last few steps read as toward the signal or away from it.</dd></div>
+    <div><dt>Headcount</dt><dd>An optional “people with you” stepper on the Citizen screen feeds the packet’s casualty count.</dd></div>
+    <div><dt>Sneakernet</dt><dd>Export the whole mesh state to a JSON file, share it by any means the phone has, import and set-union merge it on another phone — the fallback when BLE is dead and there is no cable.</dd></div>
+    <div><dt>Language</dt><dd>The Citizen screen — the one a local victim reads — in English, Hindi and Nepali, picked on the landing screen.</dd></div>
+    <div><dt>Field readiness</dt><dd>Real app identity and adaptive icon; an on-device crash log (no analytics, no network); a “Keep Zone alive” screen that walks the Doze exemption and per-OEM autostart settings; CI running the unit tests on every push.</dd></div>
   </dl>
 </div>
 
@@ -483,10 +498,10 @@
   <thead><tr><th>Cut</th><th>Why it is defensible</th></tr></thead>
   <tbody>
     <tr><td>iOS devices</td><td>iOS Safari has no Web Bluetooth at all, and native iOS background advertising is locked down by Apple. Two iOS phones would both be listeners and never hear each other. A real deployment needs an Apple entitlement or a hardware beacon.</td></tr>
-    <tr><td>Real cryptographic signatures</td><td>A truncated hash of a per-install key gives the same anti-spoofing story at demo scale without a crypto dependency.</td></tr>
-    <tr><td>RSSI trilateration</td><td>A single proximity bar is enough to convert “this block” into “this 10&nbsp;m circle.” True trilateration needs movement tracking that would not have been finished.</td></tr>
+    <tr><td>Per-device signatures</td><td>The RESPONDER tier now verifies against a pre-shared key (a SHA-256 MAC — no library). Full per-device Ed25519 identity is still cut: it needs a crypto dependency and more than 31 bytes.</td></tr>
+    <tr><td>RSSI trilateration</td><td>A proximity bar plus a hot/cold trend converts “this block” into “this 10&nbsp;m circle.” True trilateration needs movement tracking that would not have been finished.</td></tr>
     <tr><td>A CRDT library</td><td>Merging hash-addressed records by union already is a CRDT. Importing one would add weight and nothing else.</td></tr>
-    <tr><td>The last mile to the internet</td><td>Out of scope by design. The responder’s own phone showing “47 signals in this building, 3 rising-water” is already the whole product, even if it never syncs upstream.</td></tr>
+    <tr><td>An internet gateway</td><td>Out of scope by design. The responder’s own phone showing “47 signals in this building, 3 rising-water” is already the whole product. A continuous local snapshot and a sneakernet file cover the command-post hop; a bearer to the wider world is future work.</td></tr>
     <tr><td>Rubble penetration claims</td><td>2.4&nbsp;GHz attenuates hard through concrete and rebar. The answer is not magic range — it is that a pinned phone advertises for days at low power, and a rescuer walking the pile eventually gets within 10&nbsp;m.</td></tr>
   </tbody>
 </table>
@@ -510,7 +525,7 @@
   </tbody>
 </table>
 </div>
-<p class="tight">Outstanding: a 30-minute soak run and a range survey to set the demo walking distance.</p>
+<p class="tight">The v0.3 hardening (persistence, real GPS, inferred TRAPPED, responder key, RESOLVE, hot/cold Dig Here, live EOC, sneakernet, Hindi/Nepali) was re-checked on the Realme&nbsp;7 on 2026-09-04: real GPS fix read and encoded, the battery ladder picking the right interval and PHY off the actual charge, the responder key verifying, no crashes. The mesh half — 2-hop relay, RESOLVE propagation, a verified responder lifting another phone’s map — re-runs on the full three-phone set. Also outstanding: a 30-minute soak run and a range survey.</p>
 
 <footer>
   <p><strong>One binary, three roles.</strong> No servers, no internet, no analytics, no downloaded map tiles. It works in airplane mode or it does not ship.</p>
