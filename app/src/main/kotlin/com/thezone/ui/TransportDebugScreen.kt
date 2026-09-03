@@ -42,6 +42,7 @@ import com.thezone.demo.DebugOverrides
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.Packet
 import com.thezone.sensors.Altitude
+import com.thezone.sensors.Motion
 import com.thezone.sensors.Position
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
@@ -159,6 +160,16 @@ fun TransportDebugScreen() {
         KeyVal("trend / rising", "${Altitude.trendMeters} m  /  ${Altitude.rising}")
         KeyVal("baseline alt", Altitude.baselineMeters?.let { "%.1f m".format(it) } ?: "—")
         OutlinedButton(onClick = { Altitude.resetBaseline() }) { Text("Reset baseline (I'm at ground)") }
+
+        Header("Motion (immobility → TRAPPED)")
+        KeyVal("has accelerometer", Motion.hasAccelerometer.toString())
+        KeyVal(
+            "still",
+            Motion.stillSinceMillis()?.let {
+                val s = (System.currentTimeMillis() - it) / 1000
+                "${Motion.isStill()}  (${s}s quiet)"
+            } ?: "—",
+        )
 
         Header("Location / incident origin")
         val fix = Position.snapshot()

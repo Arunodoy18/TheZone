@@ -11,6 +11,7 @@ import com.thezone.packet.Packet
 import com.thezone.packet.PacketCodec
 import com.thezone.packet.Status
 import com.thezone.sensors.Altitude
+import com.thezone.sensors.Motion
 import com.thezone.sensors.Position
 
 /**
@@ -42,11 +43,15 @@ object HeartbeatSource {
             Packet.NO_FIX to Packet.NO_FIX
         }
 
-        // A user assertion (Citizen buttons) wins; otherwise status is
-        // sensor-derived — a rising barometric trend infers RISING_WATER
-        // (PACKET_SPEC status enum, PRD §6) with zero input.
-        val status = com.thezone.demo.UserStatus.code
-            ?: if (Altitude.rising) Status.RISING_WATER.code else Status.UNKNOWN.code
+        // A user assertion (Citizen buttons) wins. Otherwise status is
+        // sensor-derived with zero input (PACKET_SPEC status enum, PRD §5–6):
+        //   rising barometric trend      -> RISING_WATER  (drowning, most urgent)
+        //   phone dead still for minutes -> TRAPPED_DEBRIS (unconscious / buried)
+        val status = com.thezone.demo.UserStatus.code ?: when {
+            Altitude.rising -> Status.RISING_WATER.code
+            Motion.isStill(nowMillis) -> Status.TRAPPED_DEBRIS.code
+            else -> Status.UNKNOWN.code
+        }
 
         val packet = Packet(
             version = Packet.PROTOCOL_VERSION,
