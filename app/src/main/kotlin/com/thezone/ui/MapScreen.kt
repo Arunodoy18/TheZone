@@ -139,6 +139,13 @@ fun MapScreen() {
                 "Rasuwa replay · toll ${scenario.second} · ${(scenario.first * 100).toInt()}%",
                 color = Zone.boneFaint, fontSize = 11.sp, fontFamily = Zone.mono,
             )
+        } else if (live) {
+            val age = TransportController.newestReportAgeMillis
+            Text(
+                "${TransportController.reporterCount} reporters · " +
+                    (if (age == Long.MAX_VALUE) "nothing heard yet" else "newest ${age / 1000}s ago"),
+                color = Zone.boneFaint, fontSize = 11.sp, fontFamily = Zone.mono,
+            )
         }
 
         Spacer(Modifier.height(10.dp))

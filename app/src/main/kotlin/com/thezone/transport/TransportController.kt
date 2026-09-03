@@ -135,7 +135,52 @@ object TransportController {
             """{"cell":${cell(c.cell)},"severity":${c.severity},"confidence":${"%.3f".format(c.confidence)},""" +
                 """"devices":${c.distinctDevices},"pathDiversity":${c.pathDiversity},"verified":${c.hasVerifiedReporter}}"""
         }
-        return """{"v":2,"generatedAt":$now,"reports":[$reports],"cellLosses":[$cls],"confidence":[$conf]}"""
+        return """{"v":2,"generatedAt":$now,""" +
+            """"reporters":${reporterCount},"newestReportAgeMs":${newestReportAgeMillis},""" +
+            """"reports":[$reports],"cellLosses":[$cls],"confidence":[$conf]}"""
+    }
+
+    // --- live EOC ------------------------------------------------------------
+    // No servers / no network (CLAUDE.md rule 4): instead of a one-shot manual
+    // export, the phone holding the picture rewrites the snapshot to its external
+    // files dir every few seconds, so `adb pull` / a watched folder / an
+    // auto-refreshing viewer always has the current picture.
+
+    /** Distinct non-own devices heard in the last minute — "who is feeding this picture". */
+    val reporterCount: Int
+        get() {
+            val cut = System.currentTimeMillis() - 60_000
+            return store.all().asSequence()
+                .filterNot { it.isOwn }
+                .filter { it.lastHeardAtMillis >= cut }
+                .map { it.packet.deviceId.toHex() }
+                .distinct().count()
+        }
+
+    /** Age of the most recent inbound report, ms (Long.MAX_VALUE if nothing heard). */
+    val newestReportAgeMillis: Long
+        get() = store.all().filterNot { it.isOwn }
+            .maxOfOrNull { it.lastHeardAtMillis }
+            ?.let { System.currentTimeMillis() - it }
+            ?: Long.MAX_VALUE
+
+    @Volatile var eocAutoExport: Boolean = true
+    private var lastEocWriteMillis = 0L
+
+    /** Where the live snapshot is written (adb-pullable without run-as). */
+    fun eocLiveFile(context: Context) =
+        java.io.File(context.applicationContext.getExternalFilesDir(null), "thezone-eoc.json")
+
+    private fun maybeWriteEoc(context: Context, now: Long) {
+        if (!eocAutoExport) return
+        if (now - lastEocWriteMillis < EOC_WRITE_PERIOD_MS) return
+        lastEocWriteMillis = now
+        runCatching {
+            val f = eocLiveFile(context)
+            val tmp = java.io.File(f.parentFile, "${f.name}.tmp")
+            tmp.writeText(exportEoc())
+            if (!tmp.renameTo(f)) { tmp.copyTo(f, overwrite = true); tmp.delete() }
+        }.onFailure { Log.w("TheZone", "eoc live write failed: ${it.message}") }
     }
 
     /** Dead Man's Packet — per-device silence state, the transition log, cell losses. */
@@ -470,9 +515,9 @@ object TransportController {
                 .getOrNull()
             if (bytes != null) advertiseIfChanged(t, bytes)
 
-            if (dirty && System.currentTimeMillis() - lastSaveMillis >= SAVE_DEBOUNCE_MS) {
-                saveNow(ctx)
-            }
+            val nowMs = System.currentTimeMillis()
+            if (dirty && nowMs - lastSaveMillis >= SAVE_DEBOUNCE_MS) saveNow(ctx)
+            maybeWriteEoc(ctx, nowMs)
         } catch (e: Throwable) {
             diagnosticsError("relay pump: ${e.message}")
         }
@@ -499,6 +544,9 @@ object TransportController {
 
     /** Min gap between on-disk snapshots (crash safety, BLE only). */
     private const val SAVE_DEBOUNCE_MS = 15_000L
+
+    /** How often the live EOC snapshot is rewritten for pull / auto-refresh. */
+    private const val EOC_WRITE_PERIOD_MS = 4_000L
 
     /** On start-up, drop persisted reports/collapses older than this. */
     private const val MAX_RESTORE_AGE_MS = 24L * 60 * 60 * 1000

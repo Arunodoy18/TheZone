@@ -129,11 +129,27 @@ fun TransportDebugScreen() {
                 Text("Clear")
             }
             OutlinedButton(onClick = {
-                val f = java.io.File(context.getExternalFilesDir(null), "thezone-eoc.json")
+                val f = TransportController.eocLiveFile(context)
                 f.writeText(TransportController.exportEoc())
                 android.util.Log.i("TheZone", "EOC export -> ${f.absolutePath}")
-            }) { Text("Export EOC") }
+            }) { Text("Export EOC now") }
         }
+
+        Header("Live EOC")
+        var autoEoc by remember { mutableStateOf(TransportController.eocAutoExport) }
+        FilterChip(
+            selected = autoEoc,
+            onClick = { autoEoc = !autoEoc; TransportController.eocAutoExport = autoEoc },
+            label = { Text(if (autoEoc) "auto-export: on (4s)" else "auto-export: off") },
+        )
+        KeyVal("reporters (60s)", TransportController.reporterCount.toString())
+        KeyVal(
+            "newest report",
+            TransportController.newestReportAgeMillis.let {
+                if (it == Long.MAX_VALUE) "—" else "${it / 1000}s ago"
+            },
+        )
+        KeyVal("live file", TransportController.eocLiveFile(context).absolutePath)
 
         Header("Battery override (fake the ladder)")
         var battOverride by remember { mutableStateOf(DebugOverrides.batteryPercentOverride) }

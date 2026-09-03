@@ -329,6 +329,32 @@ function parse(txt){
   catch(err){ $("gen").textContent = "could not read that file — " + err.message; }
 }
 
+/* ---- live mode: ?live=eoc.json polls a same-origin file, no network ---- */
+(function(){
+  const src = new URLSearchParams(location.search).get("live");
+  if(!src) return;
+  let lastGen = 0, fails = 0;
+  const badge = document.createElement("span");
+  badge.style.cssText = "font:600 11px/1 var(--mono);letter-spacing:.12em;color:var(--signal);margin-left:10px";
+  $("gen").after(badge);
+  async function tick(){
+    try{
+      const r = await fetch(src + "?_=" + Date.now(), {cache:"no-store"});
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      const data = await r.json();
+      fails = 0;
+      if(data.generatedAt !== lastGen){ lastGen = data.generatedAt; ingest(data); }
+      const rp = data.reporters ?? "?";
+      badge.textContent = "● LIVE · " + rp + " reporters";
+      badge.style.color = "var(--signal)";
+    }catch(e){
+      if(++fails > 2){ badge.textContent = "○ stale — " + e.message; badge.style.color = "var(--bone-dim)"; }
+    }
+  }
+  tick();
+  setInterval(tick, 3000);
+  return true; // live mode active — skip the demo snapshot below
+})() ||
 /* demo snapshot so the page isn't empty on first open */
 ingest({
   v:2, generatedAt: Date.now(),
