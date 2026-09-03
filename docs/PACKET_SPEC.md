@@ -20,7 +20,7 @@ Manufacturer-specific data field. Company ID `0xFFFF` (demo-reserved). All multi
 
 | Off | Len | Field | Encoding |
 |---|---|---|---|
-| 0 | 1 | `version_type` | high nibble = protocol version (start at 1), low nibble = packet type (0 = STATUS) |
+| 0 | 1 | `version_type` | high nibble = protocol version (start at 1), low nibble = packet type (0 = STATUS, 1 = RESOLVE) |
 | 1 | 6 | `device_id` | first 6 bytes of SHA-256 of a per-install random 32-byte key |
 | 7 | 4 | `position` | lat/lon delta from a hardcoded local origin, 2 × int16, ~2 m precision (see below) |
 | 11 | 1 | `status` | enum, see below |
@@ -31,9 +31,27 @@ Manufacturer-specific data field. Company ID `0xFFFF` (demo-reserved). All multi
 | 18 | 1 | `alt_delta` | int8, relative altitude in metres vs this device's baseline, clamped ±127. `0x80` = no barometer |
 | 19 | 4 | `auth` | first 4 bytes of SHA-256(device_key ‖ payload[0..18]). Not real crypto — anti-spoofing at demo scale |
 | 23 | 1 | `alt_trend` | int8, metres change across the last 3 transmissions. Positive = climbing |
-| 24 | 7 | `reserved` | zero-filled. Future text-code index |
+| 24 | 7 | `reserved` | zero-filled in a STATUS packet. In a RESOLVE packet, the first 7 bytes of the resolved report's `content_id` |
 
 Total: **31 bytes.**
+
+### Packet type 1 — RESOLVE
+
+Same 31-byte layout, `version_type` low nibble = 1. A responder declares a heard
+report handled so the network's picture converges on who still needs help.
+
+- `device_id` — the resolving responder.
+- `status` — always `RESPONDER` (6).
+- `reserved[24,31)` — first 7 bytes of the target report's `content_id` (56 bits;
+  collision-safe at a disaster's report volume).
+- `auth` — MAC'd with the **pre-shared responder key**, not this device's key, so
+  any phone holding the key can verify it and a forged RESOLVE from a non-responder
+  is rejected. Other fields carry the responder's own live state, so a RESOLVE also
+  proves the responder is alive.
+
+Receivers keep a set-union log of resolved `content_id` prefixes (carried and
+merged like everything else). A report whose `content_id` starts with any stored
+prefix is hidden from the triage list and dropped from the severity map.
 
 ---
 

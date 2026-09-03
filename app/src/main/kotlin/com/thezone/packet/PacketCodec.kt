@@ -32,6 +32,12 @@ object PacketCodec {
 
     private const val ALT_NO_BAROMETER_BYTE = 0x80
 
+    /** Packet type nibble (low nibble of byte 0). 0 = STATUS, 1 = RESOLVE. */
+    const val TYPE_RESOLVE = 1
+
+    /** RESOLVE carries the first N bytes of the resolved report's content-id in reserved[24,31). */
+    const val RESOLVE_PREFIX_BYTES = 7
+
     // --- encode -------------------------------------------------------------
 
     /**
@@ -85,6 +91,59 @@ object PacketCodec {
         // reserved [24, 31) stays zero.
         return out
     }
+
+    // --- RESOLVE (packet type 1) ---------------------------------------------
+
+    /**
+     * Build a RESOLVE packet: responder [resolver] declares the report identified
+     * by [resolvedContentId] handled. type = [TYPE_RESOLVE]; the first
+     * [RESOLVE_PREFIX_BYTES] of the target content-id go in reserved[24,31);
+     * `auth` is MAC'd with [responderKey] so only provisioned responders can
+     * issue one. The remaining fields carry the responder's own live state, so
+     * the packet doubles as proof the responder is alive.
+     */
+    fun buildResolve(
+        resolver: DeviceIdentity,
+        responderKey: ByteArray,
+        resolvedContentId: ByteArray,
+        deltaLat: Int,
+        deltaLon: Int,
+        batteryLevel: Int,
+        timestampMinutes: Int,
+        nextExpectedTxSeconds: Int,
+        altDelta: Int = Packet.NO_BAROMETER,
+        altTrend: Int = 0,
+    ): ByteArray {
+        require(resolvedContentId.size >= RESOLVE_PREFIX_BYTES) { "content-id too short" }
+        val p = Packet(
+            version = Packet.PROTOCOL_VERSION,
+            type = TYPE_RESOLVE,
+            deviceId = resolver.deviceId,
+            deltaLat = deltaLat,
+            deltaLon = deltaLon,
+            status = Status.RESPONDER.code,
+            severity = 0,
+            casualties = 0,
+            timestampMinutes = timestampMinutes,
+            batteryLevel = batteryLevel,
+            hopCount = 0,
+            nextExpectedTxSeconds = nextExpectedTxSeconds,
+            altDelta = altDelta,
+            altTrend = altTrend,
+        )
+        // auth covers [0,19) only, so writing reserved[24,31) after encode is safe
+        val out = encode(p, resolver, authKey = responderKey)
+        resolvedContentId.copyInto(out, OFF_RESERVED, 0, RESOLVE_PREFIX_BYTES)
+        return out
+    }
+
+    fun isResolve(bytes: ByteArray): Boolean =
+        bytes.size == Packet.SIZE_BYTES &&
+            (bytes[OFF_VERSION_TYPE].toInt() and 0x0F) == TYPE_RESOLVE
+
+    /** The target content-id prefix from a RESOLVE packet, or null if it isn't one. */
+    fun resolveTargetPrefix(bytes: ByteArray): ByteArray? =
+        if (isResolve(bytes)) bytes.copyOfRange(OFF_RESERVED, OFF_RESERVED + RESOLVE_PREFIX_BYTES) else null
 
     // --- decode -----------------------------------------------------------
 

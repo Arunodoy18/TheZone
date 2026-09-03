@@ -81,8 +81,10 @@ fun ResponderScreen() {
             Spacer(Modifier.width(10.dp))
             Text("${rows.size}", color = Zone.signal, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
             Spacer(Modifier.weight(1f))
+            val reached = TransportController.resolvedCount
             if (rising > 0) Tag("$rising RISING", Zone.alarm, Zone.paper)
             if (silent > 0) { Spacer(Modifier.width(8.dp)); Tag("$silent SILENT", Zone.alarmDeep, Zone.paper) }
+            if (reached > 0) { Spacer(Modifier.width(8.dp)); Tag("$reached REACHED", Zone.calm, Zone.paper) }
         }
 
         if (rows.isEmpty()) {
@@ -257,6 +259,27 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text("Walk toward the signal — the channel fills as you close in.",
             color = Zone.paperDim, fontSize = 13.sp)
+
+        val context = androidx.compose.ui.platform.LocalContext.current
+        if (TransportController.canResolve(context)) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Zone.calm)
+                    .clickable {
+                        if (TransportController.markResolved(context, deviceIdHex)) {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            onBack()
+                        }
+                    }
+                    .padding(vertical = 18.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("MARK REACHED", color = Zone.paper, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

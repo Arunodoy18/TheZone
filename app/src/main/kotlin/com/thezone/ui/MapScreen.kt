@@ -77,7 +77,11 @@ fun MapScreen() {
 
     val cellByDevice = TransportController.silenceDevices.associate { it.deviceIdHex to it.cell }
     val allLosses: List<CellLoss> = TransportController.cellLosses
-    val reports = TransportController.reports
+    // a report a responder has marked reached, and RESOLVE packets themselves, drop off the map
+    val reports = TransportController.reports.filterNot {
+        TransportController.isResolved(it.contentId) ||
+            it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE
+    }
     val scenario = TransportController.simScenario
 
     val tMin = reports.minOfOrNull { it.firstHeardAtMillis } ?: 0L

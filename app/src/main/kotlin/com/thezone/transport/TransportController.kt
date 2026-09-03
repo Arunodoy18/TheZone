@@ -7,6 +7,7 @@ import com.thezone.core.CellLoss
 import com.thezone.core.CorroborationScorer
 import com.thezone.core.DeviceSilence
 import com.thezone.core.ReportStore
+import com.thezone.core.ResolveLog
 import com.thezone.core.SilenceEvaluator
 import com.thezone.core.SilenceState
 import com.thezone.core.SilenceTransition
@@ -41,6 +42,7 @@ object TransportController {
     private var transport: ReportTransport? = null
     private val store = ReportStore()
     private val silence = SilenceEvaluator()
+    private val resolveLog = ResolveLog()
 
     private val pump = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "relay-pump").apply { isDaemon = true }
@@ -73,11 +75,20 @@ object TransportController {
     val reports: List<StoredReport>
         get() = store.all().sortedByDescending { it.lastHeardAtMillis }
 
+    /** Content-id prefixes a responder has marked reached (RESOLVE, PACKET_SPEC type 1). */
+    val resolvedPrefixes: Set<String> get() = resolveLog.all()
+    val resolvedCount: Int get() = resolveLog.size
+    fun isResolved(contentIdHex: String): Boolean = resolveLog.isResolved(contentIdHex)
+
+    /** Stored reports minus anything a responder has marked reached. */
+    private fun activeReports(): List<StoredReport> =
+        store.all().filterNot { resolveLog.isResolved(it.contentId) }
+
     /** Confidence-scored severity per cell (PS5) — trust the picture, don't just colour it. */
     val cellConfidence: List<CellConfidence>
         get() {
-            val all = store.all()
-            return CorroborationScorer.scoreCells(all, verifiedResponderDevices(all))
+            val active = activeReports()
+            return CorroborationScorer.scoreCells(active, verifiedResponderDevices(active))
         }
 
     /** device_id hex of stored RESPONDER packets whose auth verifies against the shared key. */
@@ -103,7 +114,10 @@ object TransportController {
         val now = System.currentTimeMillis()
         val silenceByDev = silence.snapshot().associateBy { it.deviceIdHex }
 
-        val reports = store.all().filterNot { it.isOwn }.joinToString(",") { r ->
+        val reports = store.all()
+            .filterNot { it.isOwn }
+            .filterNot { it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE || resolveLog.isResolved(it.contentId) }
+            .joinToString(",") { r ->
             val dev = r.packet.deviceId.toHex()
             val gc = com.thezone.core.GridCells.of(r.packet.deltaLat, r.packet.deltaLon)
                 ?: com.thezone.core.GridCells.fallback(dev)
@@ -135,13 +149,19 @@ object TransportController {
             it.state == SilenceState.ALIVE || it.state == SilenceState.OVERDUE
         }
 
-    /** Store + silence, joined into the responder's triage rows — one per device. */
+    /**
+     * Store + silence, joined into the responder's triage rows — one per device.
+     * A device whose latest report has been marked reached (RESOLVE) drops off
+     * the list, so the picture converges on who still needs help.
+     */
     fun triageEntries(): List<TriageEntry> {
         val silenceByDev = silence.snapshot().associateBy { it.deviceIdHex }
         return store.all()
             .filterNot { it.isOwn }
+            .filterNot { it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE }
             .groupBy { it.packet.deviceId.toHex() }
             .map { (_, records) -> records.maxBy { it.lastHeardAtMillis } }
+            .filterNot { resolveLog.isResolved(it.contentId) }
             .map { r ->
             val dev = r.packet.deviceId.toHex()
             val s = silenceByDev[dev]
@@ -224,6 +244,7 @@ object TransportController {
         synchronized(lock) {
             store.restore(loaded.reports)
             silence.restoreCellLosses(loaded.cellLosses)
+            resolveLog.addAll(loaded.resolvedPrefixes)
             val ownHex = store.ownDeviceIdHex
             loaded.reports.asSequence()
                 .filterNot { it.isOwn }
@@ -241,7 +262,7 @@ object TransportController {
         if (transport !is BleTransport) return
         dirty = false
         lastSaveMillis = System.currentTimeMillis()
-        StatePersistence.save(context, store.all(), silence.cellLosses())
+        StatePersistence.save(context, store.all(), silence.cellLosses(), resolveLog.all())
     }
 
     /** Force this device's own heartbeat on air right now (manual debug button). */
@@ -258,9 +279,61 @@ object TransportController {
         ping()
     }
 
+    /**
+     * A provisioned responder marks a heard device's latest report reached: build
+     * a RESOLVE, carry it, put it on air. Returns false if this phone has no
+     * responder key or the device isn't in the store.
+     */
+    fun markResolved(context: Context, deviceIdHex: String): Boolean {
+        val ctx = context.applicationContext
+        appContext = ctx
+        val key = com.thezone.config.IncidentConfig.responderKey(ctx) ?: return false
+        val t = transport ?: return false
+        val target = store.all()
+            .filter {
+                !it.isOwn && it.packet.deviceId.toHex() == deviceIdHex &&
+                    it.packet.type != PacketCodec.TYPE_RESOLVE
+            }
+            .maxByOrNull { it.lastHeardAtMillis } ?: return false
+
+        val contentId = PacketCodec.contentId(target.bytes)
+        val id = DeviceKeyStore.identity(ctx)
+        val pct = HeartbeatSource.effectiveBatteryPercent(ctx)
+        val fix = com.thezone.sensors.Position.snapshot()
+        val fresh = fix != null && fix.ageMillis() <= 10L * 60 * 1000
+        val dLat = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lat, com.thezone.config.IncidentConfig.originLat(ctx)) else com.thezone.packet.Packet.NO_FIX
+        val dLon = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lon, com.thezone.config.IncidentConfig.originLon(ctx)) else com.thezone.packet.Packet.NO_FIX
+
+        val bytes = PacketCodec.buildResolve(
+            resolver = id,
+            responderKey = key,
+            resolvedContentId = contentId,
+            deltaLat = dLat,
+            deltaLon = dLon,
+            batteryLevel = BatteryScale.percentToNibble(pct),
+            timestampMinutes = com.thezone.packet.EventClock.stampMinutes(System.currentTimeMillis()),
+            nextExpectedTxSeconds = HeartbeatSource.ladderSeconds(pct),
+            altDelta = com.thezone.sensors.Altitude.deltaByte,
+            altTrend = com.thezone.sensors.Altitude.trendMeters,
+        )
+        store.accept(bytes, rssiDbm = 0)
+        resolveLog.add(contentId.copyOfRange(0, PacketCodec.RESOLVE_PREFIX_BYTES).toHex())
+        t.advertise(bytes)
+        lastAdvertisedHex = bytes.toHex()
+        dirty = true
+        Log.d("TheZone", "RESOLVE issued for dev=$deviceIdHex cid=${target.contentId.take(14)}")
+        ping()
+        return true
+    }
+
+    /** Whether this phone can issue RESOLVEs (provisioned with the responder key). */
+    fun canResolve(context: Context): Boolean =
+        com.thezone.config.IncidentConfig.responderKey(context.applicationContext) != null
+
     fun clearReceived() {
         store.clear()
         silence.clear()
+        resolveLog.clear()
         dirty = false
         appContext?.let { StatePersistence.delete(it) }
         ping()
@@ -277,6 +350,7 @@ object TransportController {
             (transport as? SimulatedTransport)?.shutdown()
             (transport as? BleTransport)?.shutdown()
             store.clear()
+            resolveLog.clear()
             transport = next
         }
         next.onDiagnostics { d ->
@@ -295,6 +369,18 @@ object TransportController {
         if (outcome == com.thezone.core.AcceptOutcome.NEW || outcome == com.thezone.core.AcceptOutcome.UPDATED) {
             dirty = true
         }
+
+        // RESOLVE (type 1): only honour it if it verifies against the shared
+        // responder key — a forged "reached" from a non-responder is ignored.
+        if (PacketCodec.isResolve(inbound.bytes)) {
+            val key = appContext?.let { com.thezone.config.IncidentConfig.responderKey(it) }
+            if (key != null && PacketCodec.verifyAuthWithKey(inbound.bytes, key)) {
+                PacketCodec.resolveTargetPrefix(inbound.bytes)?.let {
+                    if (resolveLog.add(it.toHex())) dirty = true
+                }
+            }
+        }
+
         val packet = runCatching { PacketCodec.decode(inbound.bytes) }.getOrNull()
         if (packet != null) {
             val dev = packet.deviceId.toHex()

@@ -27,12 +27,21 @@ object StatePersistence {
     private const val VERSION = 1
     private const val TAG = "TheZone"
 
-    data class Loaded(val reports: List<StoredReport>, val cellLosses: List<CellLoss>)
+    data class Loaded(
+        val reports: List<StoredReport>,
+        val cellLosses: List<CellLoss>,
+        val resolvedPrefixes: List<String>,
+    )
 
     private fun file(context: Context) = File(context.filesDir, FILE)
 
     /** Overwrite the snapshot. Cheap enough to call on a debounce from the pump. */
-    fun save(context: Context, reports: List<StoredReport>, cellLosses: List<CellLoss>) {
+    fun save(
+        context: Context,
+        reports: List<StoredReport>,
+        cellLosses: List<CellLoss>,
+        resolvedPrefixes: Collection<String> = emptyList(),
+    ) {
         val root = JSONObject()
         root.put("v", VERSION)
         root.put("savedAt", System.currentTimeMillis())
@@ -69,6 +78,7 @@ object StatePersistence {
             )
         }
         root.put("cellLosses", cl)
+        root.put("resolved", JSONArray(resolvedPrefixes.toList()))
 
         runCatching {
             val tmp = File(context.filesDir, "$FILE.tmp")
@@ -139,9 +149,14 @@ object StatePersistence {
             )
         }
 
-        if (reports.isEmpty() && losses.isEmpty()) return null
-        Log.d(TAG, "state loaded: ${reports.size} reports, ${losses.size} collapses")
-        return Loaded(reports, losses)
+        val resolved = ArrayList<String>()
+        root.optJSONArray("resolved")?.let { arr ->
+            for (i in 0 until arr.length()) arr.optString(i, null)?.let { resolved.add(it) }
+        }
+
+        if (reports.isEmpty() && losses.isEmpty() && resolved.isEmpty()) return null
+        Log.d(TAG, "state loaded: ${reports.size} reports, ${losses.size} collapses, ${resolved.size} resolved")
+        return Loaded(reports, losses, resolved)
     }
 
     fun delete(context: Context) {

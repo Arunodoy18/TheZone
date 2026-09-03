@@ -224,6 +224,47 @@ class PacketCodecTest {
         assertEquals(Status.RESPONDER.code, PacketCodec.decode(bytes).status)
     }
 
+    /** RESOLVE (type 1): carries the target content-id prefix, MAC'd with the responder key. */
+    @Test
+    fun resolvePacket_carriesTargetPrefixAndVerifies() {
+        val responder = identity(Random(91))
+        val key = ByteArray(16) { (it + 3).toByte() }
+
+        // a report to resolve
+        val victim = identity(Random(92))
+        val cid = PacketCodec.contentId(PacketCodec.encode(basePacket(victim), victim))
+
+        val resolve = PacketCodec.buildResolve(
+            resolver = responder,
+            responderKey = key,
+            resolvedContentId = cid,
+            deltaLat = Packet.NO_FIX, deltaLon = Packet.NO_FIX,
+            batteryLevel = 9,
+            timestampMinutes = 12345,
+            nextExpectedTxSeconds = 10,
+        )
+
+        assertEquals(Packet.SIZE_BYTES, resolve.size)
+        assertTrue(PacketCodec.isResolve(resolve))
+        assertEquals(PacketCodec.TYPE_RESOLVE, PacketCodec.decode(resolve).type)
+        assertTrue(PacketCodec.verifyAuthWithKey(resolve, key))
+        assertFalse(PacketCodec.verifyAuthWithKey(resolve, ByteArray(16)))
+
+        val prefix = PacketCodec.resolveTargetPrefix(resolve)!!
+        assertArrayEquals(cid.copyOfRange(0, PacketCodec.RESOLVE_PREFIX_BYTES), prefix)
+
+        // two RESOLVEs for different targets have different content-ids (won't dedup away)
+        val v2 = identity(Random(93))
+        val other = PacketCodec.buildResolve(
+            responder, key, PacketCodec.contentId(PacketCodec.encode(basePacket(v2), v2)),
+            Packet.NO_FIX, Packet.NO_FIX, 9, 12345, 10,
+        )
+        assertNotEquals(
+            PacketCodec.contentId(resolve).toList(),
+            PacketCodec.contentId(other).toList(),
+        )
+    }
+
     // --- helpers ---------------------------------------------------------
 
     private fun basePacket(id: DeviceIdentity) = Packet(
