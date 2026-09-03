@@ -43,6 +43,16 @@ class SilenceEvaluator(
      */
     private val freshnessWindowMillis: Long = 90_000L,
     private val maxTransitionLog: Int = 200,
+    /**
+     * Sybil guard for CELL_LOSS. A relay injecting fabricated silent devices
+     * presents them all at one hop count. With this on, a cell only collapses if
+     * its silent members showed independent arrival — ≥2 distinct hop counts
+     * collectively, or at least one heard near-directly (hop ≤ 1).
+     *
+     * OFF by default: the demo's single-carrier scenario can legitimately deliver
+     * a whole cluster at one hop. Turn on where multiple relays are expected.
+     */
+    private val requireCellPathDiversity: Boolean = false,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -59,6 +69,8 @@ class SilenceEvaluator(
         var stateSinceMillis: Long,
         var unexpectedSinceMillis: Long?,
         var cell: GridCell?,
+        /** every distinct hop count this device has arrived at — path-diversity signal */
+        val hopsSeen: MutableSet<Int> = mutableSetOf(),
     )
 
     /**
@@ -87,6 +99,7 @@ class SilenceEvaluator(
                     stateSinceMillis = receivedAtMillis,
                     unexpectedSinceMillis = null,
                     cell = cell,
+                    hopsSeen = mutableSetOf(packet.hopCount),
                 )
                 return
             }
@@ -95,6 +108,7 @@ class SilenceEvaluator(
                 track.promisedNextTxSeconds = promised
                 track.lastBatteryPercent = battery
             }
+            track.hopsSeen.add(packet.hopCount)
             if (cell != null) track.cell = cell
             reclassify(deviceIdHex, track, receivedAtMillis) // catch return-from-dead immediately
         }
@@ -121,6 +135,7 @@ class SilenceEvaluator(
                     stateSinceMillis = lastHeardAtMillis,
                     unexpectedSinceMillis = null,
                     cell = cell,
+                    hopsSeen = mutableSetOf(packet.hopCount),
                 )
                 return
             }
@@ -129,6 +144,7 @@ class SilenceEvaluator(
                 track.promisedNextTxSeconds = promised
                 track.lastBatteryPercent = battery
             }
+            track.hopsSeen.add(packet.hopCount)
             if (cell != null) track.cell = cell
         }
     }
@@ -225,6 +241,14 @@ class SilenceEvaluator(
             val first = silentAt.min()
             val last = silentAt.max()
             if (last - first > cellWindowMillis) continue
+
+            // Sybil guard: a relay injecting fabricated ids delivers them all at one hop
+            if (requireCellPathDiversity) {
+                val silentMembers = members.filter { it.unexpectedSinceMillis != null }
+                val distinctHops = silentMembers.flatMapTo(HashSet()) { it.hopsSeen }
+                val nearDirect = silentMembers.any { m -> m.hopsSeen.any { it <= 1 } }
+                if (distinctHops.size < 2 && !nearDirect) continue
+            }
 
             val loss = CellLoss(
                 cell = cell,
