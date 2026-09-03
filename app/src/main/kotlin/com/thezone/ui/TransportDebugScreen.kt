@@ -135,6 +135,35 @@ fun TransportDebugScreen() {
             }) { Text("Export EOC now") }
         }
 
+        Header("Mesh state file (sneakernet)")
+        var meshMsg by remember { mutableStateOf<String?>(null) }
+        val importPicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.GetContent(),
+        ) { uri ->
+            if (uri != null) {
+                val text = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+                meshMsg = if (text == null) "could not read that file"
+                else "imported ${TransportController.importMeshStateJson(text)} new record(s)"
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val f = TransportController.writeMeshStateFile(context)
+                meshMsg = "wrote ${f.name}"
+            }) { Text("Export mesh → file") }
+            OutlinedButton(onClick = {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(android.content.Intent.EXTRA_TEXT, TransportController.exportMeshStateJson())
+                }
+                context.startActivity(android.content.Intent.createChooser(send, "Share mesh state"))
+            }) { Text("Share…") }
+            OutlinedButton(onClick = { importPicker.launch("*/*") }) { Text("Import file") }
+        }
+        meshMsg?.let { KeyVal("last", it) }
+
         Header("Live EOC")
         var autoEoc by remember { mutableStateOf(TransportController.eocAutoExport) }
         FilterChip(

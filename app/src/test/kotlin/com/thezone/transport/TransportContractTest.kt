@@ -104,6 +104,21 @@ class TransportContractTest {
     }
 
     @Test
+    fun meshStateFormat_parsesPacketsAndIgnoresResolvedPrefixes() {
+        // TransportController.exportMeshStateJson adds a "resolved" array of short
+        // hex prefixes; FileTransport.parse must still pick out only the 31-byte packets
+        val pkt = "ab".repeat(31)
+        val json = """{"v":1,"packets":["$pkt"],"resolved":["aabbccddeeff00","1122334455667788"]}"""
+        val parsed = FileTransport.parse(json)
+        assertEquals(1, parsed.size)
+        assertTrue(parsed[0].contentEquals(ByteArray(31) { 0xAB.toByte() }))
+        // and the resolved regex used on import finds both prefixes
+        val body = Regex("\"resolved\"\\s*:\\s*\\[([^]]*)]").find(json)!!.groupValues[1]
+        val prefixes = Regex("\"([0-9a-fA-F]{2,64})\"").findAll(body).map { it.groupValues[1] }.toList()
+        assertEquals(listOf("aabbccddeeff00", "1122334455667788"), prefixes)
+    }
+
+    @Test
     fun advertiseRejectsNon31ByteArrays() {
         val t = SimulatedTransport()
         try {

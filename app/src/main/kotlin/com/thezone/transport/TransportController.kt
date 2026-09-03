@@ -135,9 +135,40 @@ object TransportController {
             """{"cell":${cell(c.cell)},"severity":${c.severity},"confidence":${"%.3f".format(c.confidence)},""" +
                 """"devices":${c.distinctDevices},"pathDiversity":${c.pathDiversity},"verified":${c.hasVerifiedReporter}}"""
         }
-        return """{"v":2,"generatedAt":$now,""" +
-            """"reporters":${reporterCount},"newestReportAgeMs":${newestReportAgeMillis},""" +
+        val ageMs = newestReportAgeMillis.let { if (it == Long.MAX_VALUE) -1 else it }
+        return """{"v":2,"generatedAt":$now,"generatedBy":"${store.ownDeviceIdHex ?: ""}",""" +
+            """"reporters":${reporterCount},"newestReportAgeMs":$ageMs,""" +
             """"reports":[$reports],"cellLosses":[$cls],"confidence":[$conf]}"""
+    }
+
+    // --- mesh state as a file (sneakernet, CLAUDE.md "emergency fallback") ---
+
+    /**
+     * Every stored raw record + the resolve log, in the [FileTransport] wire
+     * format (superset). Two phones with no BLE contact can exchange this file
+     * and [importMeshStateJson] merges it — set-union, so it's safe to do both ways.
+     */
+    fun exportMeshStateJson(): String {
+        val packets = store.snapshotRaw().joinToString(",") { "\"${it.toHex()}\"" }
+        val resolved = resolveLog.all().joinToString(",") { "\"$it\"" }
+        return """{"v":1,"packets":[$packets],"resolved":[$resolved]}"""
+    }
+
+    /** Merge a mesh-state file into the store. Returns how many records were new. */
+    fun importMeshStateJson(text: String): Int {
+        val added = store.mergeFrom(FileTransport.parse(text))
+        Regex("\"resolved\"\\s*:\\s*\\[([^]]*)]").find(text)?.groupValues?.get(1)?.let { body ->
+            Regex("\"([0-9a-fA-F]{2,64})\"").findAll(body).forEach { resolveLog.add(it.groupValues[1]) }
+        }
+        if (added > 0) dirty = true
+        ping()
+        return added
+    }
+
+    fun writeMeshStateFile(context: Context): java.io.File {
+        val f = java.io.File(context.applicationContext.getExternalFilesDir(null), "thezone-mesh.json")
+        f.writeText(exportMeshStateJson())
+        return f
     }
 
     // --- live EOC ------------------------------------------------------------
