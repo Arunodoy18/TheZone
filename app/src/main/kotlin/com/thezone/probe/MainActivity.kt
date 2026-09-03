@@ -49,6 +49,7 @@ import com.thezone.mode.AppMode
 import com.thezone.mode.ModeStore
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
+import com.thezone.ui.BatterySetupScreen
 import com.thezone.ui.CitizenScreen
 import com.thezone.ui.LandingScreen
 import com.thezone.ui.MapScreen
@@ -82,11 +83,17 @@ private fun Root() {
     var mode by remember { mutableStateOf(ModeStore.get(context)) }
     var showSwitcher by remember { mutableStateOf(false) }
     var showDebug by remember { mutableStateOf(false) }
+    var showBattery by remember { mutableStateOf(false) }
     // shown on every cold start; survives rotation but not the task being cleared
     var showLanding by rememberSaveable { mutableStateOf(true) }
 
     if (showLanding) {
         LandingScreen(onEnter = { showLanding = false })
+        return
+    }
+
+    if (showBattery) {
+        BatterySetupScreen(onBack = { showBattery = false })
         return
     }
 
@@ -139,6 +146,7 @@ private fun Root() {
                         showSwitcher = false
                     },
                     onDebug = { showSwitcher = false; showDebug = true },
+                    onBattery = { showSwitcher = false; showBattery = true },
                     onDismiss = { showSwitcher = false },
                 )
             }
@@ -214,6 +222,7 @@ private fun ModeSwitcher(
     current: AppMode,
     onPick: (AppMode) -> Unit,
     onDebug: () -> Unit,
+    onBattery: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Box(
@@ -241,6 +250,8 @@ private fun ModeSwitcher(
                 ) { onPick(m) }
             }
             Spacer(Modifier.height(10.dp))
+            ZoneButton("Keep Zone alive (battery)", filled = false) { onBattery() }
+            Spacer(Modifier.height(6.dp))
             ZoneButton("Debug (H0 / H2)", filled = false) { onDebug() }
         }
     }
