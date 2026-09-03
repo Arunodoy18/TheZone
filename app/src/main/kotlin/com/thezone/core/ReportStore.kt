@@ -128,6 +128,17 @@ class ReportStore(
     }
 
     /**
+     * Replace the store's contents with a persisted snapshot (Tier 0 crash
+     * safety). Entries keep their original [StoredReport.contentId]; malformed
+     * ones are dropped. Order is insertion order of [reports].
+     */
+    fun restore(reports: Collection<StoredReport>) = synchronized(lock) {
+        byId.clear()
+        relayCursor = 0
+        for (r in reports) byId[r.contentId] = r
+    }
+
+    /**
      * Up to [max] carried packets to rebroadcast, hop incremented (PACKET_SPEC
      * rule 3: the *copy* is incremented, the stored original is untouched).
      *

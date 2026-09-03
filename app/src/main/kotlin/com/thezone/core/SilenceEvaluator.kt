@@ -100,6 +100,44 @@ class SilenceEvaluator(
         }
     }
 
+    /**
+     * Rebuild a device track from a persisted report on start-up (Tier 0 crash
+     * safety). Same fold as [onPacket] but *without* the freshness gate — the
+     * report is old by definition, and we want the next [tick] to reclassify it
+     * (a device we lost across a reboot should surface as silent, not vanish).
+     */
+    fun seed(deviceIdHex: String, packet: Packet, lastHeardAtMillis: Long) {
+        synchronized(lock) {
+            val battery = BatteryScale.nibbleToPercent(packet.batteryLevel)
+            val promised = packet.nextExpectedTxSeconds.coerceAtLeast(1)
+            val cell = cellFor(packet)
+            val track = tracks[deviceIdHex]
+            if (track == null) {
+                tracks[deviceIdHex] = Track(
+                    lastHeardAtMillis = lastHeardAtMillis,
+                    promisedNextTxSeconds = promised,
+                    lastBatteryPercent = battery,
+                    state = SilenceState.ALIVE,
+                    stateSinceMillis = lastHeardAtMillis,
+                    unexpectedSinceMillis = null,
+                    cell = cell,
+                )
+                return
+            }
+            if (lastHeardAtMillis >= track.lastHeardAtMillis) {
+                track.lastHeardAtMillis = lastHeardAtMillis
+                track.promisedNextTxSeconds = promised
+                track.lastBatteryPercent = battery
+            }
+            if (cell != null) track.cell = cell
+        }
+    }
+
+    /** Re-flag collapses detected before a restart, so they don't have to re-trigger. */
+    fun restoreCellLosses(losses: Collection<CellLoss>) = synchronized(lock) {
+        for (l in losses) flaggedCells[l.cell] = l
+    }
+
     /** Reclassify every device and run cell-loss detection. */
     fun tick(now: Long = nowMillis()): TickResult {
         synchronized(lock) {

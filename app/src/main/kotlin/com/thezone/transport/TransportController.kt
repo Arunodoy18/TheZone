@@ -16,6 +16,7 @@ import com.thezone.demo.HeartbeatSource
 import com.thezone.packet.BatteryScale
 import com.thezone.identity.DeviceKeyStore
 import com.thezone.packet.PacketCodec
+import com.thezone.persistence.StatePersistence
 import com.thezone.sensors.PressureReader
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -47,6 +48,12 @@ object TransportController {
     private var lastAdvertisedHex: String? = null
     private var appContext: Context? = null
     private var pressureReader: PressureReader? = null
+
+    // Tier 0 crash safety: snapshot the store + collapses to disk on a debounce
+    // so a reboot / OS kill mid-incident doesn't start a carrier phone blank.
+    // BLE only — a Simulated/File demo run must never overwrite real field data.
+    @Volatile private var dirty = false
+    private var lastSaveMillis = 0L
 
     @Volatile
     var diagnostics: TransportDiagnostics = TransportDiagnostics(kind = "none")
@@ -168,6 +175,7 @@ object TransportController {
         store.ownDeviceIdHex = runCatching {
             DeviceKeyStore.identity(context).deviceId.toHex()
         }.getOrNull()
+        loadPersisted(appContext!!)
         if (pressureReader == null) pressureReader = PressureReader(appContext!!)
         pressureReader?.start()
         transport?.start()
@@ -179,9 +187,37 @@ object TransportController {
         pumpTask?.cancel(false)
         pumpTask = null
         lastAdvertisedHex = null
+        appContext?.let { saveNow(it) }
         pressureReader?.stop()
         transport?.stop()
         ping()
+    }
+
+    /** Reload a persisted snapshot into the store + silence tracker (BLE only). */
+    private fun loadPersisted(context: Context) {
+        if (transport !is BleTransport) return
+        val loaded = StatePersistence.load(context, MAX_RESTORE_AGE_MS) ?: return
+        synchronized(lock) {
+            store.restore(loaded.reports)
+            silence.restoreCellLosses(loaded.cellLosses)
+            val ownHex = store.ownDeviceIdHex
+            loaded.reports.asSequence()
+                .filterNot { it.isOwn }
+                .map { it.packet.deviceId.toHex() to it }
+                .filter { it.first != ownHex }
+                .forEach { (dev, r) -> silence.seed(dev, r.packet, r.lastHeardAtMillis) }
+        }
+        dirty = false
+        lastSaveMillis = System.currentTimeMillis()
+        ping()
+    }
+
+    /** Write the snapshot now, if the active transport is BLE. */
+    private fun saveNow(context: Context) {
+        if (transport !is BleTransport) return
+        dirty = false
+        lastSaveMillis = System.currentTimeMillis()
+        StatePersistence.save(context, store.all(), silence.cellLosses())
     }
 
     /** Force this device's own heartbeat on air right now (manual debug button). */
@@ -201,6 +237,8 @@ object TransportController {
     fun clearReceived() {
         store.clear()
         silence.clear()
+        dirty = false
+        appContext?.let { StatePersistence.delete(it) }
         ping()
     }
 
@@ -223,11 +261,16 @@ object TransportController {
         }
         next.onPacket(::ingest)
         diagnostics = next.diagnostics
+        // switching (back) to BLE: repopulate from the on-disk snapshot
+        if (next is BleTransport) appContext?.let { loadPersisted(it) }
         ping()
     }
 
     private fun ingest(inbound: InboundPacket) {
-        store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
+        val outcome = store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
+        if (outcome == com.thezone.core.AcceptOutcome.NEW || outcome == com.thezone.core.AcceptOutcome.UPDATED) {
+            dirty = true
+        }
         val packet = runCatching { PacketCodec.decode(inbound.bytes) }.getOrNull()
         if (packet != null) {
             val dev = packet.deviceId.toHex()
@@ -297,6 +340,7 @@ object TransportController {
                         "first@${it.firstSilentAtMillis} last@${it.lastSilentAtMillis}",
                 )
             }
+            if (result.transitions.isNotEmpty() || result.newCellLosses.isNotEmpty()) dirty = true
 
             // Don't relay heartbeats for devices we locally believe are silent —
             // that would keep a dead device looking alive downstream.
@@ -315,6 +359,10 @@ object TransportController {
                 .onSuccess { store.accept(it, rssiDbm = 0) }
                 .getOrNull()
             if (bytes != null) advertiseIfChanged(t, bytes)
+
+            if (dirty && System.currentTimeMillis() - lastSaveMillis >= SAVE_DEBOUNCE_MS) {
+                saveNow(ctx)
+            }
         } catch (e: Throwable) {
             diagnosticsError("relay pump: ${e.message}")
         }
@@ -338,6 +386,12 @@ object TransportController {
 
     /** 1 tick in N airs a carried packet instead of the own heartbeat. */
     private const val RELAY_EVERY_N_TICKS = 3L
+
+    /** Min gap between on-disk snapshots (crash safety, BLE only). */
+    private const val SAVE_DEBOUNCE_MS = 15_000L
+
+    /** On start-up, drop persisted reports/collapses older than this. */
+    private const val MAX_RESTORE_AGE_MS = 24L * 60 * 60 * 1000
 }
 
 /** One stored report, flattened for the debug list. */
