@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nepali. Machine-drafted for a demo — have a native speaker review before a real deployment. -->
+<resources>
+    <string name="citizen_heard">तपाईंलाई सुनिँदैछ</string>
+    <string name="citizen_reaching">नजिकैको फोन खोज्दै</string>
+    <string name="citizen_carrying_one">फोनले तपाईंको सङ्केत बोक्दैछ</string>
+    <string name="citizen_carrying_many">फोनहरूले तपाईंको सङ्केत बोक्दैछन्</string>
+    <string name="citizen_trapped">थुनिएको</string>
+    <string name="citizen_water_rising">पानी बढ्दै</string>
+    <string name="citizen_safe">सुरक्षित</string>
+    <string name="citizen_people_none">तपाईंसँग मानिस</string>
+    <string name="citizen_people_max">15+ तपाईंसँग</string>
+    <string name="citizen_people_n">%1$d तपाईंसँग</string>
+</resources>

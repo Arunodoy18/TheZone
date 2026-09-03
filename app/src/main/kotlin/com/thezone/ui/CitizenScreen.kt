@@ -63,6 +63,7 @@ fun CitizenScreen() {
     transportTick()
     val peers = TransportController.peersHeard
     val view = LocalView.current
+    val s = citizenStrings()
     var status by remember { mutableStateOf(UserStatus.code) }
 
     // --- the "someone just heard you" moment -------------------------------
@@ -117,7 +118,7 @@ fun CitizenScreen() {
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                "You are being heard",
+                s.heard,
                 color = androidx.compose.ui.graphics.lerp(Zone.bone.copy(alpha = 0.55f), Zone.signal, headline),
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
@@ -135,9 +136,9 @@ fun CitizenScreen() {
             )
             Text(
                 text = when (peers) {
-                    0 -> "reaching for a nearby phone"
-                    1 -> "device is carrying your signal"
-                    else -> "devices are carrying your signal"
+                    0 -> s.reaching
+                    1 -> s.carryingOne
+                    else -> s.carryingMany
                 },
                 color = Zone.boneDim,
                 fontSize = 17.sp,
@@ -151,12 +152,12 @@ fun CitizenScreen() {
                 .fillMaxWidth()
                 .padding(14.dp),
         ) {
-            HeadcountRow()
+            HeadcountRow(s)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatusButton("Trapped", Status.TRAPPED_DEBRIS.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
-                StatusButton("Water\nrising", Status.RISING_WATER.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
-                StatusButton("Safe", Status.SAFE.code, status) { s -> status = toggle(status, s); UserStatus.code = status }
+                StatusButton(s.trapped, Status.TRAPPED_DEBRIS.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
+                StatusButton(s.waterRising, Status.RISING_WATER.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
+                StatusButton(s.safe, Status.SAFE.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
             }
         }
 
@@ -174,7 +175,7 @@ private fun toggle(current: Int?, tapped: Int): Int? = if (current == tapped) nu
 
 /** Optional "how many people are with you" — feeds the packet's casualty count. */
 @Composable
-private fun HeadcountRow() {
+private fun HeadcountRow(s: CitizenStrings) {
     val view = LocalView.current
     var n by remember { mutableIntStateOf(com.thezone.demo.SelfReport.headcount) }
     fun set(v: Int) {
@@ -192,7 +193,7 @@ private fun HeadcountRow() {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            if (n == 0) "people with you" else if (n >= 15) "15+ with you" else "$n with you",
+            if (n == 0) s.peopleNone else if (n >= 15) s.peopleMax else s.peopleN(n),
             color = Zone.boneDim, fontSize = 15.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(start = 8.dp),
         )

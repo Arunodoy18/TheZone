@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,6 +135,8 @@ fun LandingScreen(onEnter: () -> Unit) {
                 .padding(horizontal = 24.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            LangPicker()
+            Spacer(Modifier.height(12.dp))
             Text(
                 "OFFLINE · NO SERVERS · 31 BYTES · AIRPLANE-MODE NATIVE",
                 color = Zone.boneFaint, fontSize = 9.sp, fontWeight = FontWeight.Medium,
@@ -150,6 +153,34 @@ fun LandingScreen(onEnter: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text("Enter", color = Zone.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/** Language for the Citizen screen — the one a local victim reads. */
+@Composable
+private fun LangPicker() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var current by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(com.thezone.config.LangStore.tag(context) ?: "system")
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.thezone.config.LangStore.options.forEach { (tag, label) ->
+            val on = tag == current
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (on) Zone.signal else Zone.inkSoft)
+                    .pointerInput(tag) {
+                        detectTapGestures(onTap = {
+                            com.thezone.config.LangStore.set(context, tag)
+                            current = tag
+                        })
+                    }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                Text(label, color = if (on) Zone.ink else Zone.boneDim, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

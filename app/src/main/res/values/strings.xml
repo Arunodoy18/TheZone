@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zone</string>
+
+    <!-- Citizen screen. Kept short and plain; translations want a native check. -->
+    <string name="citizen_heard">You are being heard</string>
+    <string name="citizen_reaching">reaching for a nearby phone</string>
+    <string name="citizen_carrying_one">device is carrying your signal</string>
+    <string name="citizen_carrying_many">devices are carrying your signal</string>
+    <string name="citizen_trapped">Trapped</string>
+    <string name="citizen_water_rising">Water rising</string>
+    <string name="citizen_safe">Safe</string>
+    <string name="citizen_people_none">people with you</string>
+    <string name="citizen_people_max">15+ with you</string>
+    <string name="citizen_people_n">%1$d with you</string>
 </resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hindi. Machine-drafted for a demo — have a native speaker review before a real deployment. -->
+<resources>
+    <string name="citizen_heard">आपको सुना जा रहा है</string>
+    <string name="citizen_reaching">पास के फ़ोन को खोज रहे हैं</string>
+    <string name="citizen_carrying_one">फ़ोन आपका संकेत ले जा रहा है</string>
+    <string name="citizen_carrying_many">फ़ोन आपका संकेत ले जा रहे हैं</string>
+    <string name="citizen_trapped">फँसे हैं</string>
+    <string name="citizen_water_rising">पानी बढ़ रहा है</string>
+    <string name="citizen_safe">सुरक्षित</string>
+    <string name="citizen_people_none">आपके साथ लोग</string>
+    <string name="citizen_people_max">15+ आपके साथ</string>
+    <string name="citizen_people_n">%1$d आपके साथ</string>
+</resources>
