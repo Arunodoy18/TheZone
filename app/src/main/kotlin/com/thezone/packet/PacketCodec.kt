@@ -35,11 +35,13 @@ object PacketCodec {
     // --- encode -------------------------------------------------------------
 
     /**
-     * Encode [packet], signing with [identity]. Always returns exactly
-     * [Packet.SIZE_BYTES] bytes. Throws if any field is out of range or if
-     * [identity] does not own [Packet.deviceId].
+     * Encode [packet], signing with [identity] — or, when [authKey] is given,
+     * MAC the `auth` field with that key instead (the pre-shared responder key:
+     * a RESPONDER packet any phone holding the key can verify). Always returns
+     * exactly [Packet.SIZE_BYTES] bytes. Throws if any field is out of range or
+     * if [identity] does not own [Packet.deviceId].
      */
-    fun encode(packet: Packet, identity: DeviceIdentity): ByteArray {
+    fun encode(packet: Packet, identity: DeviceIdentity, authKey: ByteArray? = null): ByteArray {
         validate(packet)
         require(identity.deviceId.contentEquals(packet.deviceId)) {
             "packet.deviceId does not match the signing identity"
@@ -74,8 +76,8 @@ object PacketCodec {
                 packet.altDelta.coerceIn(-127, 127).toByte()
             }
 
-        // auth = SHA-256(key ‖ out[0, 19))[0, 4)
-        val auth = DeviceIdentity.sha256(identity.key, out.copyOfRange(0, AUTH_COVERAGE_END))
+        // auth = SHA-256(key ‖ out[0, 19))[0, 4) — key is the responder key when signing a RESPONDER packet
+        val auth = DeviceIdentity.sha256(authKey ?: identity.key, out.copyOfRange(0, AUTH_COVERAGE_END))
         auth.copyInto(out, OFF_AUTH, 0, AUTH_BYTES)
 
         out[OFF_ALT_TREND] = packet.altTrend.coerceIn(-128, 127).toByte()
@@ -182,10 +184,17 @@ object PacketCodec {
     }
 
     /** Full check: recompute auth from [identity]'s key and compare. */
-    fun verifyAuth(bytes: ByteArray, identity: DeviceIdentity): Boolean {
+    fun verifyAuth(bytes: ByteArray, identity: DeviceIdentity): Boolean =
+        verifyAuthWithKey(bytes, identity.key)
+
+    /**
+     * Verify `auth` against a raw key. Used with the pre-shared responder key: a
+     * packet claiming `Status.RESPONDER` is only trusted as a responder if this
+     * returns true.
+     */
+    fun verifyAuthWithKey(bytes: ByteArray, key: ByteArray): Boolean {
         require(bytes.size == Packet.SIZE_BYTES)
-        val expected =
-            DeviceIdentity.sha256(identity.key, bytes.copyOfRange(0, AUTH_COVERAGE_END))
+        val expected = DeviceIdentity.sha256(key, bytes.copyOfRange(0, AUTH_COVERAGE_END))
         for (i in 0 until AUTH_BYTES) {
             if (expected[i] != bytes[OFF_AUTH + i]) return false
         }

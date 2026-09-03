@@ -205,6 +205,25 @@ class PacketCodecTest {
         }
     }
 
+    /** Pre-shared responder key: a RESPONDER packet MAC'd with it verifies on any phone holding it. */
+    @Test
+    fun responderKeyAuth_verifiesWithSharedKeyOnly() {
+        val id = identity(Random(77))
+        val responderKey = ByteArray(16) { (it * 7 + 1).toByte() }
+        val wrongKey = ByteArray(16) { (it * 7 + 2).toByte() }
+
+        val packet = basePacket(id).copy(status = Status.RESPONDER.code)
+        val bytes = PacketCodec.encode(packet, id, authKey = responderKey)
+
+        assertEquals(Packet.SIZE_BYTES, bytes.size)
+        assertTrue(PacketCodec.verifyAuthWithKey(bytes, responderKey))
+        assertFalse(PacketCodec.verifyAuthWithKey(bytes, wrongKey))
+        // and it is NOT a valid self-signed packet from the device
+        assertFalse(PacketCodec.verifyAuth(bytes, id))
+        // decodes cleanly, still 31 bytes, RESPONDER status survives
+        assertEquals(Status.RESPONDER.code, PacketCodec.decode(bytes).status)
+    }
+
     // --- helpers ---------------------------------------------------------
 
     private fun basePacket(id: DeviceIdentity) = Packet(

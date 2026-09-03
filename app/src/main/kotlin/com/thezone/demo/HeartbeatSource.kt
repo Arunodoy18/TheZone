@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.BatteryManager
 import com.thezone.config.IncidentConfig
 import com.thezone.identity.DeviceKeyStore
+import com.thezone.mode.AppMode
+import com.thezone.mode.ModeStore
 import com.thezone.packet.BatteryScale
 import com.thezone.packet.EventClock
 import com.thezone.packet.GeoPosition
@@ -43,11 +45,19 @@ object HeartbeatSource {
             Packet.NO_FIX to Packet.NO_FIX
         }
 
-        // A user assertion (Citizen buttons) wins. Otherwise status is
+        // A responder phone (RESPONDER mode + provisioned with the shared key)
+        // broadcasts a verified RESPONDER packet: auth is MAC'd with the
+        // responder key instead of this device's key, so any phone can check it.
+        val responderKey =
+            if (ModeStore.get(context) == AppMode.RESPONDER) IncidentConfig.responderKey(context) else null
+
+        // Otherwise: a user assertion (Citizen buttons) wins, else status is
         // sensor-derived with zero input (PACKET_SPEC status enum, PRD §5–6):
         //   rising barometric trend      -> RISING_WATER  (drowning, most urgent)
         //   phone dead still for minutes -> TRAPPED_DEBRIS (unconscious / buried)
-        val status = com.thezone.demo.UserStatus.code ?: when {
+        val status = when {
+            responderKey != null -> Status.RESPONDER.code
+            com.thezone.demo.UserStatus.code != null -> com.thezone.demo.UserStatus.code!!
             Altitude.rising -> Status.RISING_WATER.code
             Motion.isStill(nowMillis) -> Status.TRAPPED_DEBRIS.code
             else -> Status.UNKNOWN.code
@@ -72,7 +82,8 @@ object HeartbeatSource {
             altDelta = Altitude.deltaByte,   // NO_BAROMETER when absent — never a false zero
             altTrend = Altitude.trendMeters,
         )
-        return PacketCodec.encode(packet, identity).also { Altitude.markTransmitted() }
+        return PacketCodec.encode(packet, identity, authKey = responderKey)
+            .also { Altitude.markTransmitted() }
     }
 
     /** docs/PACKET_SPEC.md "next_expected_tx" table. */

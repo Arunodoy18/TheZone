@@ -74,7 +74,21 @@ object TransportController {
         get() = store.all().sortedByDescending { it.lastHeardAtMillis }
 
     /** Confidence-scored severity per cell (PS5) — trust the picture, don't just colour it. */
-    val cellConfidence: List<CellConfidence> get() = CorroborationScorer.scoreCells(store.all())
+    val cellConfidence: List<CellConfidence>
+        get() {
+            val all = store.all()
+            return CorroborationScorer.scoreCells(all, verifiedResponderDevices(all))
+        }
+
+    /** device_id hex of stored RESPONDER packets whose auth verifies against the shared key. */
+    private fun verifiedResponderDevices(reports: List<StoredReport>): Set<String> {
+        val key = appContext?.let { com.thezone.config.IncidentConfig.responderKey(it) } ?: return emptySet()
+        return reports.asSequence()
+            .filter { it.packet.status == com.thezone.packet.Status.RESPONDER.code }
+            .filter { PacketCodec.verifyAuthWithKey(it.bytes, key) }
+            .map { it.packet.deviceId.toHex() }
+            .toSet()
+    }
 
     /** True when a confirmed collapse is inside this device's radio horizon. */
     val nearDamage: Boolean get() = com.thezone.demo.NetworkAlert.nearDamage

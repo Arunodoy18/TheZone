@@ -15,13 +15,14 @@ import com.thezone.packet.Status
  *  - path diversity — a report that reached us at more than one hop count came
  *    down more than one route
  *  - physical plausibility — the altitude / trend / status don't contradict
- *  - a verified reporter — a plausible `Status.RESPONDER` in the cell. This build
- *    has no packet signatures (CLAUDE.md rule 5), so a bare RESPONDER byte is
- *    unauthenticated: it earns trust only *in proportion to* independent
- *    corroboration, never on its own. A pre-shared responder key is the next step.
+ *  - a verified reporter — a plausible `Status.RESPONDER` in the cell whose
+ *    device id is in [verifiedResponders] (its `auth` checked out against the
+ *    pre-shared responder key). A RESPONDER claim that *doesn't* verify counts
+ *    for nothing extra — it earns trust only in proportion to independent
+ *    corroboration, like any other phone.
  *
  * A single panicking phone lands near 0. Three independent phones plus a
- * corroborated responder lands near 1. Pure Kotlin, unit-tested.
+ * verified responder lands near 1. Pure Kotlin, unit-tested.
  */
 object CorroborationScorer {
 
@@ -33,7 +34,11 @@ object CorroborationScorer {
     /** Distinct devices needed before the device term saturates. */
     private const val DEVICES_FOR_FULL = 3
 
-    fun scoreCells(reports: List<StoredReport>): List<CellConfidence> {
+    fun scoreCells(
+        reports: List<StoredReport>,
+        /** device_id hex of reports whose `auth` verified against the responder key. */
+        verifiedResponders: Set<String> = emptySet(),
+    ): List<CellConfidence> {
         data class R(val dev: String, val report: StoredReport)
 
         val byCell = reports.asSequence()
@@ -59,19 +64,19 @@ object CorroborationScorer {
             // junk packets from fabricated ids can't pad it
             val credibleDevices = list.filter { plausible(it.report.packet) }.map { it.dev }.toSet().size
 
-            // a RESPONDER claim must itself be plausible, and buys trust only in
-            // proportion to independent corroboration (0 alone, full at 2+ others)
-            val hasVerified = inCell.any {
-                it.packet.status == Status.RESPONDER.code && plausible(it.packet)
+            // a cryptographically-verified responder (auth checked against the
+            // shared key) in the cell earns the full verified weight
+            val hasVerified = list.any {
+                it.dev in verifiedResponders &&
+                    it.report.packet.status == Status.RESPONDER.code &&
+                    plausible(it.report.packet)
             }
-            val independentDevices = (credibleDevices - if (hasVerified) 1 else 0).coerceAtLeast(0)
-            val verifiedTerm = if (hasVerified) unit(independentDevices / 2.0) else 0.0
 
             val confidence = (
                 W_DEVICES * unit(credibleDevices.toDouble() / DEVICES_FOR_FULL) +
                     W_PATHS * unit((pathDiversity - 1).toDouble()) + // 1 route -> 0, 2+ -> 1
                     W_PLAUSIBLE * plausibleFrac +
-                    W_VERIFIED * verifiedTerm
+                    W_VERIFIED * (if (hasVerified) 1.0 else 0.0)
                 ).coerceIn(0.0, 1.0)
 
             CellConfidence(

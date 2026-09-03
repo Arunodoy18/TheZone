@@ -196,6 +196,38 @@ fun TransportDebugScreen() {
             OutlinedButton(onClick = { IncidentConfig.reset(context) }) { Text("Reset origin") }
         }
 
+        Header("Responder key (shared)")
+        var keyRev by remember { mutableIntStateOf(0) }
+        var keyField by remember { mutableStateOf("") }
+        val fp = remember(keyRev) { IncidentConfig.responderKeyFingerprint(context) }
+        val isResponderMode = com.thezone.mode.ModeStore.get(context) == com.thezone.mode.AppMode.RESPONDER
+        KeyVal("provisioned", if (fp != null) "yes  fp=$fp" else "no")
+        KeyVal(
+            "broadcasting as",
+            if (isResponderMode && fp != null) "RESPONDER (verified)"
+            else if (isResponderMode) "citizen — mode is RESPONDER but no key" else "citizen",
+        )
+        androidx.compose.material3.OutlinedTextField(
+            value = keyField,
+            onValueChange = { keyField = it },
+            singleLine = true,
+            label = { Text("paste key hex") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                IncidentConfig.parseKeyHex(keyField)?.let { IncidentConfig.setResponderKey(context, it); keyField = ""; keyRev++ }
+            }) { Text("Set from hex") }
+            OutlinedButton(onClick = {
+                val k = IncidentConfig.newResponderKey()
+                IncidentConfig.setResponderKey(context, k); keyField = IncidentConfig.keyToHex(k); keyRev++
+            }) { Text("Generate") }
+            OutlinedButton(onClick = {
+                IncidentConfig.responderKey(context)?.let { keyField = IncidentConfig.keyToHex(it) }
+            }) { Text("Reveal") }
+            OutlinedButton(onClick = { IncidentConfig.setResponderKey(context, null); keyField = ""; keyRev++ }) { Text("Clear") }
+        }
+
         val ble = TransportController.bleTransport()
         if (ble != null) {
             Header("BLE debug switches")

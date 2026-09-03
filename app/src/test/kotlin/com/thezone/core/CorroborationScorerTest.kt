@@ -51,26 +51,30 @@ class CorroborationScorerTest {
         assertEquals(3, trio.distinctDevices)
     }
 
+    private fun devHex(r: StoredReport) = r.packet.deviceId.joinToString("") { "%02x".format(it) }
+
     @Test
-    fun aLoneUnverifiedResponderClaimAddsNothing() {
-        // no signatures in this build — a bare RESPONDER byte with no corroboration
-        // is worth exactly as much as any other lone plausible phone, no bonus
-        val responder = CorroborationScorer.scoreCells(listOf(report(status = Status.RESPONDER.code))).single()
+    fun anUnverifiedResponderClaimIsJustAnotherPhone() {
+        // a RESPONDER byte whose auth didn't check out against the shared key
+        // (not in the verified set) buys nothing extra
+        val responder = report(status = Status.RESPONDER.code)
+        val scored = CorroborationScorer.scoreCells(listOf(responder), verifiedResponders = emptySet()).single()
         val ordinary = CorroborationScorer.scoreCells(listOf(report(status = Status.INJURED.code))).single()
-        assertTrue(responder.hasVerifiedReporter)
-        assertEquals(ordinary.confidence, responder.confidence, 1e-9)
+        assertTrue(!scored.hasVerifiedReporter)
+        assertEquals(ordinary.confidence, scored.confidence, 1e-9)
     }
 
     @Test
-    fun aCorroboratedResponderLiftsConfidence() {
-        val alone = CorroborationScorer.scoreCells(listOf(report(status = Status.RESPONDER.code))).single()
-        val corroborated = CorroborationScorer.scoreCells(
-            listOf(report(status = Status.RESPONDER.code)) + List(2) { report() },
-        ).single()
-        assertTrue(corroborated.hasVerifiedReporter)
+    fun aVerifiedResponderGetsTheFullWeight() {
+        val responder = report(status = Status.RESPONDER.code)
+        val unverified = CorroborationScorer.scoreCells(listOf(responder)).single()
+        val verified = CorroborationScorer
+            .scoreCells(listOf(responder), verifiedResponders = setOf(devHex(responder)))
+            .single()
+        assertTrue(verified.hasVerifiedReporter)
         assertTrue(
-            "corroborated ${corroborated.confidence} vs alone ${alone.confidence}",
-            corroborated.confidence > alone.confidence + 0.2,
+            "verified ${verified.confidence} vs unverified ${unverified.confidence}",
+            verified.confidence >= unverified.confidence + 0.24,
         )
     }
 
