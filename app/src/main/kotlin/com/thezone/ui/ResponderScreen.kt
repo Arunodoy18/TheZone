@@ -186,6 +186,16 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
     val rssi = entry?.lastRssiDbm ?: -100
     val heardAgoMs = entry?.let { System.currentTimeMillis() - it.lastHeardAtMillis } ?: Long.MAX_VALUE
 
+    // hot/cold from the RSSI slope as the responder walks — the actionable bit
+    val trend = remember { com.thezone.core.ProximityTrend() }
+    trend.add(rssi, System.currentTimeMillis())
+    val slope = trend.slopeDbPerSec()
+    val (trendWord, trendColor) = when (trend.reading()) {
+        com.thezone.core.ProximityTrend.Reading.WARMER -> "▲  WARMER" to Zone.calm
+        com.thezone.core.ProximityTrend.Reading.COLDER -> "▼  COLDER" to Zone.alarmDeep
+        com.thezone.core.ProximityTrend.Reading.HOLDING -> "•  HOLDING" to Zone.paperDim
+    }
+
     val rawFill = ((rssi + 95f) / 50f).coerceIn(0f, 1f)
     val fill by animateFloatAsState(rawFill, label = "dig-fill")
     val metres = estimateMetres(rssi)
@@ -224,8 +234,18 @@ fun DigHereScreen(deviceIdHex: String, onBack: () -> Unit) {
 
         // readout — always at the top, so the layout is full at any fill level
         Spacer(Modifier.height(10.dp))
-        Text(word, color = Zone.paperInk, fontSize = 52.sp, fontWeight = FontWeight.Bold)
-        Text("≈ $metres m", color = fillColor, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(trendWord, color = trendColor, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                if (kotlin.math.abs(slope) >= 0.6) "%+.0f dB/s".format(slope) else "",
+                color = trendColor, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(word, color = Zone.paperInk, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+        Text("≈ $metres m", color = fillColor, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
         Text("$linkText  ·  $rssi dBm  ·  heard ${(heardAgoMs / 1000).coerceAtMost(999)}s ago",
             color = linkColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Text("dev ${deviceIdHex.take(12)}", color = Zone.paperDim, fontFamily = Zone.mono, fontSize = 12.sp)
