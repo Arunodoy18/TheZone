@@ -135,6 +135,8 @@ fun LandingScreen(onEnter: () -> Unit) {
                 .padding(horizontal = 24.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            BluetoothBanner()
+            Spacer(Modifier.height(12.dp))
             LangPicker()
             Spacer(Modifier.height(12.dp))
             Text(

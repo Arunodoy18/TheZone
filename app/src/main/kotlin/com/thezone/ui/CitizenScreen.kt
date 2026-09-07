@@ -110,6 +110,12 @@ fun CitizenScreen() {
             }
         }
 
+        BluetoothBanner(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        )
+
         Column(
             Modifier
                 .fillMaxSize()
