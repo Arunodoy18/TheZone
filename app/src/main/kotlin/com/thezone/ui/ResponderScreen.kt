@@ -52,11 +52,17 @@ import kotlin.math.roundToInt
 @Composable
 fun ResponderScreen() {
     transportTick()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var digTarget by remember { mutableStateOf<String?>(null) }
+    var showIssueAlert by remember { mutableStateOf(false) }
 
     val target = digTarget
     if (target != null) {
         DigHereScreen(deviceIdHex = target, onBack = { digTarget = null })
+        return
+    }
+    if (showIssueAlert) {
+        IssueAlertSheet(onDismiss = { showIssueAlert = false })
         return
     }
 
@@ -70,6 +76,7 @@ fun ResponderScreen() {
             .fillMaxSize()
             .background(Zone.paper),
     ) {
+        AlertBanner(Modifier.padding(12.dp))
         Row(
             Modifier
                 .fillMaxWidth()
@@ -82,6 +89,14 @@ fun ResponderScreen() {
             Text("${rows.size}", color = Zone.signal, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Zone.mono)
             Spacer(Modifier.weight(1f))
             val reached = TransportController.resolvedCount
+            if (TransportController.canResolve(context)) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(6.dp)).background(Zone.alarm)
+                        .clickable { showIssueAlert = true }
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                ) { Text("⚠ ALERT", color = Zone.paper, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.width(8.dp))
+            }
             if (rising > 0) Tag("$rising RISING", Zone.alarm, Zone.paper)
             if (silent > 0) { Spacer(Modifier.width(8.dp)); Tag("$silent SILENT", Zone.alarmDeep, Zone.paper) }
             if (reached > 0) { Spacer(Modifier.width(8.dp)); Tag("$reached REACHED", Zone.calm, Zone.paper) }

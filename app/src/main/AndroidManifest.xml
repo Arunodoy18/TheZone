@@ -57,6 +57,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.thezone.notify.AlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.TheZoneProbe" />
+
         <service
             android:name="com.thezone.transport.BleForegroundService"
             android:exported="false"

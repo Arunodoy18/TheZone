@@ -2,6 +2,7 @@ package com.thezone.persistence
 
 import android.content.Context
 import android.util.Log
+import com.thezone.core.AlertRecord
 import com.thezone.core.CellLoss
 import com.thezone.core.GridCell
 import com.thezone.core.StoredReport
@@ -31,6 +32,7 @@ object StatePersistence {
         val reports: List<StoredReport>,
         val cellLosses: List<CellLoss>,
         val resolvedPrefixes: List<String>,
+        val alerts: List<AlertRecord>,
     )
 
     private fun file(context: Context) = File(context.filesDir, FILE)
@@ -41,6 +43,7 @@ object StatePersistence {
         reports: List<StoredReport>,
         cellLosses: List<CellLoss>,
         resolvedPrefixes: Collection<String> = emptyList(),
+        alerts: Collection<AlertRecord> = emptyList(),
     ) {
         val root = JSONObject()
         root.put("v", VERSION)
@@ -79,6 +82,18 @@ object StatePersistence {
         }
         root.put("cellLosses", cl)
         root.put("resolved", JSONArray(resolvedPrefixes.toList()))
+
+        val al = JSONArray()
+        for (a in alerts) {
+            al.put(
+                JSONObject()
+                    .put("cid", a.contentIdHex).put("cat", a.category).put("phr", a.phraseCode)
+                    .put("lat", a.cell?.latIndex ?: Int.MIN_VALUE).put("lon", a.cell?.lonIndex ?: Int.MIN_VALUE)
+                    .put("rad", a.radiusMeters).put("iss", a.issuedAtMillis).put("exp", a.expiresAtMillis)
+                    .put("by", a.issuerHex).put("hop", a.hopCount),
+            )
+        }
+        root.put("alerts", al)
 
         runCatching {
             val tmp = File(context.filesDir, "$FILE.tmp")
@@ -154,9 +169,29 @@ object StatePersistence {
             for (i in 0 until arr.length()) arr.optString(i, null)?.let { resolved.add(it) }
         }
 
-        if (reports.isEmpty() && losses.isEmpty() && resolved.isEmpty()) return null
-        Log.d(TAG, "state loaded: ${reports.size} reports, ${losses.size} collapses, ${resolved.size} resolved")
-        return Loaded(reports, losses, resolved)
+        val alerts = ArrayList<AlertRecord>()
+        root.optJSONArray("alerts")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                if (o.optLong("exp", 0L) <= now) continue // expired — drop
+                val lat = o.optInt("lat", Int.MIN_VALUE); val lon = o.optInt("lon", Int.MIN_VALUE)
+                alerts.add(
+                    AlertRecord(
+                        contentIdHex = o.optString("cid"), category = o.optInt("cat"),
+                        phraseCode = o.optInt("phr"),
+                        cell = if (lat == Int.MIN_VALUE) null else GridCell(lat, lon),
+                        radiusMeters = o.optInt("rad"), issuedAtMillis = o.optLong("iss"),
+                        expiresAtMillis = o.optLong("exp"), issuerHex = o.optString("by"),
+                        hopCount = o.optInt("hop"),
+                    ),
+                )
+            }
+        }
+
+        if (reports.isEmpty() && losses.isEmpty() && resolved.isEmpty() && alerts.isEmpty()) return null
+        Log.d(TAG, "state loaded: ${reports.size} reports, ${losses.size} collapses, " +
+            "${resolved.size} resolved, ${alerts.size} alerts")
+        return Loaded(reports, losses, resolved, alerts)
     }
 
     fun delete(context: Context) {

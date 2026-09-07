@@ -6,6 +6,8 @@ import com.thezone.core.CellConfidence
 import com.thezone.core.CellLoss
 import com.thezone.core.CorroborationScorer
 import com.thezone.core.DeviceSilence
+import com.thezone.core.AlertLog
+import com.thezone.core.AlertRecord
 import com.thezone.core.ReportStore
 import com.thezone.core.ResolveLog
 import com.thezone.core.SilenceEvaluator
@@ -43,6 +45,7 @@ object TransportController {
     private val store = ReportStore()
     private val silence = SilenceEvaluator()
     private val resolveLog = ResolveLog()
+    private val alertLog = AlertLog()
 
     private val pump = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "relay-pump").apply { isDaemon = true }
@@ -80,9 +83,17 @@ object TransportController {
     val resolvedCount: Int get() = resolveLog.size
     fun isResolved(contentIdHex: String): Boolean = resolveLog.isResolved(contentIdHex)
 
-    /** Stored reports minus anything a responder has marked reached. */
+    /** Active emergency alerts (ALERT, PACKET_SPEC type 2), most severe first. */
+    fun activeAlerts(now: Long = System.currentTimeMillis()): List<AlertRecord> = alertLog.active(now)
+    val alertCount: Int get() = alertLog.active(System.currentTimeMillis()).size
+
+    /** Stored reports minus RESOLVE / ALERT packets and anything a responder has marked reached. */
     private fun activeReports(): List<StoredReport> =
-        store.all().filterNot { resolveLog.isResolved(it.contentId) }
+        store.all().filterNot {
+            resolveLog.isResolved(it.contentId) ||
+                it.packet.type == PacketCodec.TYPE_RESOLVE ||
+                it.packet.type == PacketCodec.TYPE_ALERT
+        }
 
     /** Confidence-scored severity per cell (PS5) — trust the picture, don't just colour it. */
     val cellConfidence: List<CellConfidence>
@@ -116,7 +127,7 @@ object TransportController {
 
         val reports = store.all()
             .filterNot { it.isOwn }
-            .filterNot { it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE || resolveLog.isResolved(it.contentId) }
+            .filterNot { it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE || it.packet.type == com.thezone.packet.PacketCodec.TYPE_ALERT || resolveLog.isResolved(it.contentId) }
             .joinToString(",") { r ->
             val dev = r.packet.deviceId.toHex()
             val gc = com.thezone.core.GridCells.of(r.packet.deltaLat, r.packet.deltaLon)
@@ -234,7 +245,7 @@ object TransportController {
         val silenceByDev = silence.snapshot().associateBy { it.deviceIdHex }
         return store.all()
             .filterNot { it.isOwn }
-            .filterNot { it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE }
+            .filterNot { it.packet.type == com.thezone.packet.PacketCodec.TYPE_RESOLVE || it.packet.type == com.thezone.packet.PacketCodec.TYPE_ALERT }
             .groupBy { it.packet.deviceId.toHex() }
             .map { (_, records) -> records.maxBy { it.lastHeardAtMillis } }
             .filterNot { resolveLog.isResolved(it.contentId) }
@@ -321,6 +332,7 @@ object TransportController {
             store.restore(loaded.reports)
             silence.restoreCellLosses(loaded.cellLosses)
             resolveLog.addAll(loaded.resolvedPrefixes)
+            alertLog.restore(loaded.alerts)
             val ownHex = store.ownDeviceIdHex
             loaded.reports.asSequence()
                 .filterNot { it.isOwn }
@@ -338,7 +350,7 @@ object TransportController {
         if (transport !is BleTransport) return
         dirty = false
         lastSaveMillis = System.currentTimeMillis()
-        StatePersistence.save(context, store.all(), silence.cellLosses(), resolveLog.all())
+        StatePersistence.save(context, store.all(), silence.cellLosses(), resolveLog.all(), alertLog.all())
     }
 
     /** Force this device's own heartbeat on air right now (manual debug button). */
@@ -402,14 +414,75 @@ object TransportController {
         return true
     }
 
-    /** Whether this phone can issue RESOLVEs (provisioned with the responder key). */
+    /** Whether this phone can issue RESOLVEs / ALERTs (provisioned with the shared key). */
     fun canResolve(context: Context): Boolean =
         com.thezone.config.IncidentConfig.responderKey(context.applicationContext) != null
+
+    /**
+     * A provisioned authority phone issues an emergency alert: build a signed
+     * ALERT packet, carry it and put it on air. Returns false without the key.
+     */
+    fun issueAlert(
+        context: Context,
+        category: Int,
+        phraseCode: Int,
+        radiusMeters: Int,
+        validForMinutes: Int,
+    ): Boolean {
+        val ctx = context.applicationContext
+        appContext = ctx
+        val key = com.thezone.config.IncidentConfig.responderKey(ctx) ?: return false
+        val t = transport ?: return false
+        val id = DeviceKeyStore.identity(ctx)
+        val pct = HeartbeatSource.effectiveBatteryPercent(ctx)
+        val fix = com.thezone.sensors.Position.snapshot()
+        val fresh = fix != null && fix.ageMillis() <= 10L * 60 * 1000
+        val dLat = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lat, com.thezone.config.IncidentConfig.originLat(ctx)) else com.thezone.packet.Packet.NO_FIX
+        val dLon = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lon, com.thezone.config.IncidentConfig.originLon(ctx)) else com.thezone.packet.Packet.NO_FIX
+        val now = System.currentTimeMillis()
+
+        val bytes = PacketCodec.buildAlert(
+            issuer = id, authorityKey = key,
+            category = category, phraseCode = phraseCode,
+            deltaLat = dLat, deltaLon = dLon,
+            radiusMeters = radiusMeters,
+            issuedAtMinutes = com.thezone.packet.EventClock.stampMinutes(now),
+            validForMinutes = validForMinutes,
+            batteryLevel = BatteryScale.percentToNibble(pct),
+        )
+        store.accept(bytes, rssiDbm = 0)
+        alertLog.add(alertRecordFrom(bytes, now))
+        t.advertise(bytes)
+        lastAdvertisedHex = bytes.toHex()
+        dirty = true
+        Log.w("TheZone", "ALERT issued cat=$category phrase=$phraseCode radius=${radiusMeters}m valid=${validForMinutes}min")
+        ping()
+        return true
+    }
+
+    private fun alertRecordFrom(bytes: ByteArray, receivedAtMillis: Long): AlertRecord {
+        val a = PacketCodec.decodeAlert(bytes)
+        val issued = com.thezone.packet.EventClock
+            .sentAtMillis(a.issuedAtMinutes, receivedAtMillis)
+            .coerceAtMost(receivedAtMillis)
+        return AlertRecord(
+            contentIdHex = PacketCodec.contentId(bytes).toHex(),
+            category = a.category,
+            phraseCode = a.phraseCode,
+            cell = com.thezone.core.GridCells.of(a.deltaLat, a.deltaLon),
+            radiusMeters = a.radiusMeters,
+            issuedAtMillis = issued,
+            expiresAtMillis = issued + a.validForMinutes * 60_000L,
+            issuerHex = a.issuerHex,
+            hopCount = a.hopCount,
+        )
+    }
 
     fun clearReceived() {
         store.clear()
         silence.clear()
         resolveLog.clear()
+        alertLog.clear()
         dirty = false
         appContext?.let { StatePersistence.delete(it) }
         ping()
@@ -427,6 +500,7 @@ object TransportController {
             (transport as? BleTransport)?.shutdown()
             store.clear()
             resolveLog.clear()
+            alertLog.clear()
             transport = next
         }
         next.onDiagnostics { d ->
@@ -453,6 +527,21 @@ object TransportController {
             if (key != null && PacketCodec.verifyAuthWithKey(inbound.bytes, key)) {
                 PacketCodec.resolveTargetPrefix(inbound.bytes)?.let {
                     if (resolveLog.add(it.toHex())) dirty = true
+                }
+            }
+        }
+
+        // ALERT (type 2): honour + raise a full-screen alert only if it verifies
+        // against the shared authority key. An unverifiable "alert" is ignored.
+        if (PacketCodec.isAlert(inbound.bytes)) {
+            val key = appContext?.let { com.thezone.config.IncidentConfig.responderKey(it) }
+            if (key != null && PacketCodec.verifyAuthWithKey(inbound.bytes, key)) {
+                val rec = alertRecordFrom(inbound.bytes, inbound.receivedAtMillis)
+                if (alertLog.add(rec)) {
+                    dirty = true
+                    if (rec.issuerHex != store.ownDeviceIdHex) {
+                        appContext?.let { com.thezone.notify.AlertNotifier.show(it, rec) }
+                    }
                 }
             }
         }

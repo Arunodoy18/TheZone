@@ -20,7 +20,7 @@ Manufacturer-specific data field. Company ID `0xFFFF` (demo-reserved). All multi
 
 | Off | Len | Field | Encoding |
 |---|---|---|---|
-| 0 | 1 | `version_type` | high nibble = protocol version (start at 1), low nibble = packet type (0 = STATUS, 1 = RESOLVE) |
+| 0 | 1 | `version_type` | high nibble = protocol version (start at 1), low nibble = packet type (0 = STATUS, 1 = RESOLVE, 2 = ALERT) |
 | 1 | 6 | `device_id` | first 6 bytes of SHA-256 of a per-install random 32-byte key |
 | 7 | 4 | `position` | lat/lon delta from a hardcoded local origin, 2 × int16, ~2 m precision (see below) |
 | 11 | 1 | `status` | enum, see below |
@@ -52,6 +52,27 @@ report handled so the network's picture converges on who still needs help.
 Receivers keep a set-union log of resolved `content_id` prefixes (carried and
 merged like everything else). A report whose `content_id` starts with any stored
 prefix is hidden from the triage list and dropped from the severity map.
+
+### Packet type 2 — ALERT
+
+A government-style emergency alert that floods the mesh — the offline equivalent
+of a cell-broadcast warning, which no app can originate. Same 31-byte layout,
+`version_type` low nibble = 2, fields re-purposed:
+
+| Field | Meaning in an ALERT |
+|---|---|
+| `device_id` | the issuing authority phone |
+| `position` | alert centre (origin-delta); no-fix = whole area |
+| `status` | **category** — 0 INFO · 1 ADVISORY · 2 WATCH · 3 WARNING · 4 EXTREME |
+| `timestamp` | issued-at, minutes since event epoch |
+| `next_expected_tx` | **minutes the alert stays valid** (uint16) |
+| `alt_delta` | **radius** in units of 20 m (unsigned 0–255 → up to ~5 km); 0 = point |
+| `auth` | MAC'd with the **pre-shared responder / authority key** — only provisioned phones can issue one; a forged alert is rejected |
+| `reserved[24]` | **phrase code** — index into a fixed table (`AlertText`), so the words never travel |
+
+Category ≥ 3 (WARNING/EXTREME) triggers a loud, DND-bypassing, full-screen
+take-over on every phone that verifies it. Alerts are carried, deduped by
+`content_id` and expired locally; the phrase table is append-only.
 
 ---
 

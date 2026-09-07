@@ -125,6 +125,7 @@ fun MapScreen() {
     )
 
     Column(Modifier.fillMaxSize().background(Zone.ink).padding(16.dp)) {
+        AlertBanner(Modifier.padding(bottom = 8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("SEVERITY MAP", color = Zone.bone, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
