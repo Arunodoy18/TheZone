@@ -145,6 +145,87 @@ object PacketCodec {
     fun resolveTargetPrefix(bytes: ByteArray): ByteArray? =
         if (isResolve(bytes)) bytes.copyOfRange(OFF_RESERVED, OFF_RESERVED + RESOLVE_PREFIX_BYTES) else null
 
+    // --- ALERT (packet type 2) --------------------------------------------
+    // A government-style emergency alert that floods the mesh. Same 31 bytes,
+    // fields re-purposed: status = category (0..4), next_expected_tx = minutes the
+    // alert stays valid, alt_delta = radius in units of 20 m (unsigned 0..255),
+    // reserved[24] = phrase code (0..255). auth is MAC'd with the pre-shared
+    // responder / authority key so only provisioned phones can issue one.
+
+    const val TYPE_ALERT = 2
+
+    /** Alert severity category. */
+    const val ALERT_INFO = 0
+    const val ALERT_ADVISORY = 1
+    const val ALERT_WATCH = 2
+    const val ALERT_WARNING = 3
+    const val ALERT_EXTREME = 4
+
+    private const val ALERT_RADIUS_UNIT_M = 20
+
+    fun buildAlert(
+        issuer: DeviceIdentity,
+        authorityKey: ByteArray,
+        category: Int,
+        phraseCode: Int,
+        deltaLat: Int,
+        deltaLon: Int,
+        radiusMeters: Int,
+        issuedAtMinutes: Int,
+        validForMinutes: Int,
+        batteryLevel: Int,
+    ): ByteArray {
+        val out = ByteArray(Packet.SIZE_BYTES)
+        out[OFF_VERSION_TYPE] =
+            (((Packet.PROTOCOL_VERSION and 0x0F) shl 4) or (TYPE_ALERT and 0x0F)).toByte()
+        issuer.deviceId.copyInto(out, OFF_DEVICE_ID, 0, Packet.DEVICE_ID_BYTES)
+        putInt16(out, OFF_POSITION, deltaLat)
+        putInt16(out, OFF_POSITION + 2, deltaLon)
+        out[OFF_STATUS] = (category.coerceIn(0, 15) and 0xFF).toByte()
+        out[OFF_SEVERITY_CASUALTIES] = 0
+        putUint16(out, OFF_TIMESTAMP, issuedAtMinutes and 0xFFFF)
+        out[OFF_BATTERY_HOPS] = ((batteryLevel and 0x0F) shl 4).toByte() // hop 0
+        putUint16(out, OFF_NEXT_TX, validForMinutes.coerceIn(0, 65535))
+        out[OFF_ALT_DELTA] = ((radiusMeters / ALERT_RADIUS_UNIT_M).coerceIn(0, 255)).toByte()
+        val auth = DeviceIdentity.sha256(authorityKey, out.copyOfRange(0, AUTH_COVERAGE_END))
+        auth.copyInto(out, OFF_AUTH, 0, AUTH_BYTES)
+        out[OFF_ALT_TREND] = 0
+        out[OFF_RESERVED] = (phraseCode and 0xFF).toByte()
+        return out
+    }
+
+    fun isAlert(bytes: ByteArray): Boolean =
+        bytes.size == Packet.SIZE_BYTES &&
+            (bytes[OFF_VERSION_TYPE].toInt() and 0x0F) == TYPE_ALERT
+
+    data class AlertFields(
+        val category: Int,
+        val phraseCode: Int,
+        val deltaLat: Int,
+        val deltaLon: Int,
+        val radiusMeters: Int,
+        val issuedAtMinutes: Int,
+        val validForMinutes: Int,
+        val hopCount: Int,
+        val issuerHex: String,
+    )
+
+    fun decodeAlert(bytes: ByteArray): AlertFields {
+        require(isAlert(bytes)) { "not an ALERT packet" }
+        return AlertFields(
+            category = bytes[OFF_STATUS].toInt() and 0xFF,
+            phraseCode = bytes[OFF_RESERVED].toInt() and 0xFF,
+            deltaLat = getInt16(bytes, OFF_POSITION),
+            deltaLon = getInt16(bytes, OFF_POSITION + 2),
+            radiusMeters = (bytes[OFF_ALT_DELTA].toInt() and 0xFF) * ALERT_RADIUS_UNIT_M,
+            issuedAtMinutes = getUint16(bytes, OFF_TIMESTAMP),
+            validForMinutes = getUint16(bytes, OFF_NEXT_TX),
+            hopCount = bytes[OFF_BATTERY_HOPS].toInt() and 0x0F,
+            issuerHex = bytes.copyOfRange(OFF_DEVICE_ID, OFF_DEVICE_ID + Packet.DEVICE_ID_BYTES)
+                .joinToString("") { "%02x".format(it) },
+        )
+    }
+
     // --- decode -----------------------------------------------------------
 
     fun decode(bytes: ByteArray): Packet {
