@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zone — PBL Report, Components 1–7</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  :root { --ink:#14181b; --dim:#4a5157; --accent:#0b3d33; --line:#d5cfbf; --panel:#f3f1ea; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; max-width: 800px; padding: 28px 22px 64px;
+    font: 13px/1.55 "Helvetica Neue", Arial, sans-serif; color: var(--ink); background: #fff;
+  }
+  h1 { font-size: 19px; color: var(--accent); margin: 34px 0 4px; border-bottom: 2px solid var(--accent); padding-bottom: 3px; }
+  h2 { font-size: 15px; color: var(--accent); margin: 20px 0 4px; }
+  h3 { font-size: 13.5px; color: var(--accent); margin: 14px 0 3px; }
+  h1:first-of-type { margin-top: 0; }
+  p { margin: 7px 0; }
+  .sub { color: var(--dim); font-style: italic; font-size: 11.5px; margin-top: 2px; }
+  ul, ol { margin: 7px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  b, strong { color: var(--ink); }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10.5px; }
+  th, td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: var(--accent); color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #faf9f5; }
+  pre {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 10px 12px; font: 10px/1.4 "SF Mono", Menlo, Consolas, monospace;
+    white-space: pre; overflow-x: auto; margin: 10px 0;
+  }
+  .titlepage { text-align: center; padding: 40px 0 24px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .titlepage .t1 { font-size: 15px; font-weight: 700; }
+  .titlepage .t2 { font-size: 18px; font-weight: 700; color: var(--accent); margin: 12px 0; }
+  .titlepage .meta { font-size: 10.5px; color: var(--dim); }
+  .note { font-size: 11px; font-style: italic; color: var(--dim); border-left: 3px solid var(--accent); padding-left: 10px; margin: 12px 0; }
+  .refs li { margin: 6px 0; font-size: 11px; }
+  @media print { h1, h2 { break-after: avoid; } tr, pre, table { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<div class="titlepage">
+  <div class="t1">Project Based Learning (PBL) — Panel Presentation Content</div>
+  <div>Components 1–7 (Abstract through Results &amp; Discussion)</div>
+  <div class="t2">ZONE — An Infrastructure-Free Bluetooth Store-Carry-Forward Network<br>
+  for Disaster Zones, with Silence-Based Damage Inference</div>
+  <div class="meta">
+    Department of Computer Science &amp; Engineering · Sikkim Manipal Institute of Technology<br>
+    5th Semester PBL · Panel Presentation: 9 September 2026<br>
+    Native Android (Kotlin + Jetpack Compose) · minSdk 26 · 82 JVM unit tests · validated on three physical phones in airplane mode
+  </div>
+</div>
+
+<p class="note">This document contains the full content for PPT components 1–7. Each section is mapped to its
+slide budget from the PBL circular. All design diagrams are in Component 5; algorithm / pseudocode is in
+Component 6; result tables, comparison and discussion are in Component 7.</p>
+
+<h1>Component 1 — Abstract <span style="font-weight:400;font-size:12px">(Max. 1 slide)</span></h1>
+<p class="sub">Project summary, objectives, methodology and key outcomes.</p>
+<ul>
+  <li><b>Problem.</b> In the first 72 hours after an earthquake or flood, cellular and internet infrastructure is down
+  or saturated. Trapped survivors cannot call for help, and incident command cannot tell a collapsed block from a
+  lightly-flooded one.</li>
+  <li><b>Objective.</b> A single native-Android application that (i) forms an infrastructure-free mesh between ordinary
+  smartphones over Bluetooth Low Energy (BLE), and (ii) infers where damage is worst from the pattern of devices that
+  fall silent.</li>
+  <li><b>Methodology.</b> Connectionless dual-PHY BLE advertising (1M + Coded); a fixed 31-byte packet; epidemic
+  store-carry-forward relaying with content-addressed de-duplication (a CRDT by construction); a battery-adaptive duty
+  cycle; and a novel "Dead Man's Packet" evaluator in which every packet declares its own next transmission time, so
+  that silence becomes a measurable signal — expected (dying battery, announced) versus unexpected (promised to speak,
+  then vanished = destroyed).</li>
+  <li><b>Key outcomes.</b> One APK with three role-specific UIs (Citizen / Responder / Map-EOC); 82 JVM unit tests, all
+  passing, run in CI on every push; validated on three physical phones in airplane mode — 2-hop message delivery with
+  the source's Bluetooth switched off, correct discrimination of expected versus unexpected silence, and detection of
+  simultaneous cell-wide silence ("CELL_LOSS") reproduced against a 500-node simulation of the 2015 Gorkha earthquake
+  casualty curve (22 → 95 → 469 → 626 deaths over 72 h).</li>
+</ul>
+
+<h1>Component 2 — Introduction <span style="font-weight:400;font-size:12px">(Max. 1 slide)</span></h1>
+<p class="sub">Background of the topic, context, motivation and significance of the work.</p>
+<ul>
+  <li><b>Disasters sever telecom.</b> In the 2015 Gorkha (Nepal) earthquake, communications, power and roads failed
+  together; coordination between district and central emergency operations centres was ineffective because of "a weak
+  database and an absence of modern technology," while roughly 1.4 million people needed food, water and shelter within
+  days.</li>
+  <li><b>The golden 72 hours.</b> Survival probability for trapped victims falls sharply after about 72 hours; rescue
+  effort is squandered when responders cannot localise victims or rank sites by need.</li>
+  <li><b>Existing tools do not fit.</b> Satellite phones are scarce and need a sky view. Mesh-messenger apps (Bridgefy,
+  FireChat) are built for chat between two conscious users and have documented security failures. None of them treats a
+  device going offline as information — yet that is the single most important event in a collapse.</li>
+  <li><b>Motivation and significance.</b> Every modern phone already carries the radio (BLE 5), the sensors (barometer,
+  accelerometer, GNSS) and the battery to be a disaster node. The missing piece is software that needs no infrastructure
+  and no user action, and that turns the absence of signal into a live damage map. Zone converts "search this whole
+  block" into "search this 100 m cell — 12 phones went silent together at 04:12."</li>
+</ul>
+
+<h1>Component 3 — Literature Review <span style="font-weight:400;font-size:12px">(Max. 2 slides)</span></h1>
+<p class="sub">Paper name and publication details, inferences, relevance and research gaps (seven research papers).</p>
+
+<h3>3.1 DTN routing and mesh foundations</h3>
+<table>
+  <tr><th>#</th><th>Paper / Publication</th><th>Key inference</th><th>Relevance to Zone</th><th>Research gap</th></tr>
+  <tr><td>1</td>
+    <td>A. Vahdat, D. Becker, "Epidemic Routing for Partially Connected Ad Hoc Networks," Tech. Report CS-2000-06, Duke University, 2000.</td>
+    <td>Flood every message to every contact; nodes exchange summary vectors and pull what they lack. Guarantees eventual delivery under intermittent connectivity.</td>
+    <td>Zone's relay is epidemic flooding — the right choice when contact patterns are chaotic and unpredictable.</td>
+    <td>Unbounded replication drains battery and buffers; no dedup identity is defined for a real byte-level format.</td></tr>
+  <tr><td>2</td>
+    <td>A. Lindgren, A. Doria, O. Schelén, "Probabilistic Routing in Intermittently Connected Networks" (PRoPHET), ACM MobiHoc 2003 (poster); IRTF RFC 6693, 2012.</td>
+    <td>Use history of encounters plus transitivity to forward selectively — more deliveries than epidemic at lower overhead.</td>
+    <td>Confirms the trade-off Zone must manage: replication versus cost.</td>
+    <td>Needs stable, repeated encounters to learn from — absent in the first hours of a disaster; assumes trustworthy peers.</td></tr>
+  <tr><td>3</td>
+    <td>Z. Lu, G. Cao, T. La Porta, "TeamPhone: Networking Smartphones for Disaster Recovery," IEEE Trans. Mobile Computing, 16(12):3554–3567, 2017.</td>
+    <td>Bridges cellular + ad-hoc + opportunistic networks; a "self-rescue" module groups and positions trapped survivors' phones; about 40% lower transmission energy.</td>
+    <td>Validates smartphone-only disaster networking and the idea of a survivor-side sub-system.</td>
+    <td>Positioning needs GPS or manual grouping; no notion of inferring damage; requires user interaction.</td></tr>
+  <tr><td>4</td>
+    <td>S. M. Darroudi, C. Gomez, "Bluetooth Low Energy Mesh Networks: A Survey," Sensors (MDPI), 17(7):1467, 2017.</td>
+    <td>BLE's native topology is star / point-to-point with short range; multi-hop mesh needs an added protocol layer.</td>
+    <td>Justifies Zone's connectionless advertising flood (no GATT, no pairing) as a robust mesh substrate.</td>
+    <td>Surveyed schemes assume GATT connections or the heavy standard BLE-Mesh stack — fragile under churn.</td></tr>
+</table>
+
+<h3>3.2 Radio range, sensing and security</h3>
+<table>
+  <tr><th>#</th><th>Paper / Publication</th><th>Key inference</th><th>Relevance to Zone</th><th>Research gap</th></tr>
+  <tr><td>5</td>
+    <td>A. R. Sheikh et al., "Adaptive Physical Layer Selection for Bluetooth 5: Measurements and Simulations," Wireless Communications and Mobile Computing (Wiley/Hindawi), vol. 2021, Art. 8842919.</td>
+    <td>Measured BLE 5: 1M PHY ≈ 655 m, Coded PHY ≈ 1300 m line-of-sight at 0 dBm; realistic urban ≈ 300 m. Adapting PHY to conditions improves reliability.</td>
+    <td>Directly motivates Zone's battery→PHY ladder (Coded when affordable for reach, 1M in survival mode).</td>
+    <td>No link to duty-cycle or energy budgeting; no disaster application.</td></tr>
+  <tr><td>6</td>
+    <td>W. Falcon, H. Schulzrinne, "Predicting Floor-Level for 911 Calls with Neural Networks and Smartphone Sensor Data," arXiv:1710.11122, 2017.</td>
+    <td>Barometric pressure change from building entry gives floor level — 100% correct across 63 tests in 5 New York towers, with no beacons or building maps.</td>
+    <td>Grounds Zone's relative-altitude signal (basement versus rooftop; rising trend = drowning).</td>
+    <td>Needs a clean "entered building" event from GPS; inference is centralised at a call centre, not on the mesh.</td></tr>
+  <tr><td>7</td>
+    <td>M. R. Albrecht, J. Blasco, R. B. Jensen, L. Mareková, "Mesh Messaging in Large-Scale Protests: Breaking Bridgefy," Topics in Cryptology – CT-RSA 2021, LNCS 12704, Springer.</td>
+    <td>Bridgefy: plaintext sender/receiver IDs (tracking), no authenticity, trivial impersonation from a sniffed BLE handshake, whole-network denial of service from one malformed message.</td>
+    <td>Sets Zone's security bar: per-install hashed identity, auth-shape check on every relay, content-addressed dedup that drops malformed / duplicate frames, Sybil-resistant scoring, a pre-shared responder key.</td>
+    <td>Shows current disaster/mesh apps are unsafe; no work on making the inference layer robust to spoofed nodes.</td></tr>
+</table>
+
+<h3>3.3 Consolidated research gap</h3>
+<p>Delay-tolerant routing is solved in theory but assumes cooperative, trackable peers; disaster smartphone systems still
+require user action and GPS; BLE mesh work ignores battery-honest duty cycling; and no prior system treats device silence
+as a first-class sensing signal for damage assessment. Zone targets exactly this intersection.</p>
+
+<h1>Component 4 — Problem Identification <span style="font-weight:400;font-size:12px">(Max. 1 slide)</span></h1>
+<p class="sub">Clearly defined problem statement from the existing limitations / gaps, and the need for the proposed work.</p>
+<h3>Limitations of the current state of the art</h3>
+<ol>
+  <li><b>Infrastructure dependence and user burden.</b> Existing tools need a tower, a satellite, dedicated hardware, or
+  two conscious users actively messaging. A person who is unconscious or buried, or a command post with a dead uplink,
+  gets nothing.</li>
+  <li><b>Silence is discarded.</b> Every DTN / mesh design treats a node dropping off as noise. In a collapse it is the
+  signal — but only if each node has promised when it would speak next, which no packet format currently carries.</li>
+  <li><b>No trustworthy situational picture.</b> Reports are fragmented, contradictory and unverified (Bridgefy-class
+  spoofing); responders cannot rank sites or localise victims vertically.</li>
+</ol>
+<h3>Problem statement</h3>
+<p><i>Design and build an infrastructure-free, action-free communication and situational-awareness system for the first
+72 hours of a disaster, that (a) relays a compact distress signal between ordinary smartphones over BLE with no pairing
+and no servers; (b) makes every packet declare its next transmission so that silence can be classified as expected or
+catastrophic; (c) detects area-wide destruction from correlated silence; and (d) stays useful and trustworthy on a dying,
+possibly hostile, network.</i></p>
+<h3>Need for the proposed work</h3>
+<p>Convert "search this whole block" into "search this 100 m cell — 12 phones went silent together at 04:12," with a
+confidence-scored map and a vertical (floor) triage axis that GPS cannot provide.</p>
+
+<h1>Component 5 — Solution Strategy <span style="font-weight:400;font-size:12px">(Max. 3 slides)</span></h1>
+<p class="sub">Proposed approach, methodology, system design / architecture and planned solution. All design diagrams are included here.</p>
+
+<h2>5.1 System architecture and the three roles</h2>
+<p><b>Diagram 1 — Layered architecture:</b></p>
+<pre>+--------------------------------------------------------------------+
+|  UI LAYER  (Jetpack Compose)                                      |
+|   CitizenScreen    ResponderScreen + DigHere    MapScreen / EOC   |
++--------------------------------------------------------------------+
+|  CORE LOGIC  (pure Kotlin, JVM unit-tested, zero Android imports) |
+|   SilenceEvaluator | TriageScorer | CorroborationScorer          |
+|   ReportStore (CRDT) | Barometry | StillnessTracker | GridCells   |
++--------------------------------------------------------------------+
+|  TRANSPORT  (interface: advertise / onPacket / start / stop)      |
+|   BleTransport    .    SimulatedTransport    .    FileTransport    |
++--------------------------------------------------------------------+
+|  ANDROID EDGE   BLE adv+scan | Sensors | GNSS | FG service | KV   |
++--------------------------------------------------------------------+</pre>
+<ul>
+  <li>Transport is an interface (BLE / 500-node simulator / JSON file) so every algorithm runs identically on any of them — if BLE fails, the demo still runs on the simulator.</li>
+  <li>The core/ package has no Android imports and is fully unit-testable on the JVM.</li>
+  <li>A foreground service (connectedDevice type) keeps the radio alive when the screen is off.</li>
+</ul>
+<p><b>Diagram 2 — One binary, three physical contexts:</b></p>
+<pre>  CITIZEN                 RESPONDER                    MAP / EOC
+  dark, one number     sunlight, gloved, one hand     projector-facing
+  "You are being       triage list sorted by need    100 m severity grid
+   heard  /  3"        + "Dig Here" proximity bar     + silence layer + replay
+  panicking user       metal-detector, not a map      CELL_LOSS is visible</pre>
+
+<h2>5.2 Data path: store-carry-forward and the Dead Man's Packet</h2>
+<p><b>Diagram 3 — The relay (a message crosses a gap on foot):</b></p>
+<pre>  P1 (trapped)            P2 (carrier, walks)          P3 (responder / EOC)
+  +---------+  advertise   +---------+  advertise+relay  +---------+
+  | 31-byte | ----------> | store   | ----- walk -----> | store   |
+  | beacon  |  hop = 0    | hop = 1 |                   | hop = 2 |
+  +---------+             +---------+                   +---------+
+  BLE OFF after pickup   dedup by contentId, cap hop 15   converged picture</pre>
+<p><b>Diagram 4 — Dead Man's Packet state machine (maintained per known device):</b></p>
+<pre>        heard within grace
+   +----------------------------+
+   v                            |
+ ALIVE --past grace--> OVERDUE --+--> UNEXPECTED_SILENCE
+   |                     |            (battery had headroom -> DESTROYED, escalate)
+   |  battery <= 10%     |
+   +---------------------+------> EXPECTED_SILENCE
+                                  (it announced this -> deprioritise)
+
+ CELL RULE:  >= 3 devices in one ~100 m grid cell  AND  >= 80% of them enter
+             UNEXPECTED_SILENCE within a 120 s window   ==>   CELL_LOSS (timestamped)</pre>
+<p><b>Diagram 5 — Battery-driven duty-cycle ladder:</b></p>
+<table>
+  <tr><th>Battery</th><th>Interval</th><th>PHY</th><th>next_expected_tx broadcast</th></tr>
+  <tr><td>&gt; 60%</td><td>1 s</td><td>Coded (maximum reach)</td><td>1</td></tr>
+  <tr><td>30–60%</td><td>10 s</td><td>alternate Coded / 1M</td><td>10</td></tr>
+  <tr><td>10–30%</td><td>60 s</td><td>1M only</td><td>60</td></tr>
+  <tr><td>&lt; 10%</td><td>300 s</td><td>1M, sparse</td><td>300 (still honest)</td></tr>
+</table>
+
+<h2>5.3 Packet format, de-duplication and trust model</h2>
+<p><b>Diagram 6 — The 31-byte packet:</b></p>
+<table>
+  <tr><th>Off</th><th>Len</th><th>Field</th><th>Notes</th></tr>
+  <tr><td>0</td><td>1</td><td>version + type</td><td>type 0 = STATUS, 1 = RESOLVE</td></tr>
+  <tr><td>1</td><td>6</td><td>device_id</td><td>first 6 B of SHA-256(per-install random key)</td></tr>
+  <tr><td>7</td><td>4</td><td>position</td><td>lat/lon delta ×10^5 from a per-incident origin; sentinel = no fix</td></tr>
+  <tr><td>11</td><td>1</td><td>status</td><td>UNKNOWN / SAFE / TRAPPED / RISING_WATER / INJURED / RESOURCE / RESPONDER</td></tr>
+  <tr><td>12</td><td>1</td><td>severity · casualties</td><td>4 bits each</td></tr>
+  <tr><td>13</td><td>2</td><td>timestamp</td><td>minutes since event epoch</td></tr>
+  <tr><td>15</td><td>1</td><td>battery · hops</td><td>4 bits each</td></tr>
+  <tr><td>16</td><td>2</td><td>next_expected_tx (s)</td><td>the field the USP runs on</td></tr>
+  <tr><td>18</td><td>1</td><td>alt_delta</td><td>signed metres versus baseline; sentinel = no barometer</td></tr>
+  <tr><td>19</td><td>4</td><td>auth</td><td>first 4 B of SHA-256(key ‖ payload) — anti-spoof, not full crypto</td></tr>
+  <tr><td>23</td><td>1</td><td>alt_trend</td><td>metres over last 3 transmissions (+ = climbing)</td></tr>
+  <tr><td>24</td><td>7</td><td>reserved</td><td>a RESOLVE packet carries the target's content-id prefix here</td></tr>
+</table>
+<p><b>Diagram 7 — CRDT de-duplication:</b></p>
+<pre>  contentId = SHA-256( payload with hop nibble masked, auth bytes excluded )
+      -> the same message heard at any hop count is ONE record
+      -> merging two stores is set-union over contentId = conflict-free, no library</pre>
+<p><b>Trust model:</b></p>
+<ul>
+  <li>Hashed per-install identity; the auth shape is verified on every relay.</li>
+  <li>Malformed and duplicate frames are dropped at ingestion.</li>
+  <li>CorroborationScorer weights each cell by distinct devices, independent hop paths, physical plausibility and a key-verified RESPONDER report.</li>
+  <li>A fabricated-ID flood cannot inflate a cell (Sybil-resistant); an optional path-diversity guard protects CELL_LOSS itself.</li>
+</ul>
+
+<h1>Component 6 — Implementation <span style="font-weight:400;font-size:12px">(Max. 3 slides)</span></h1>
+<p class="sub">Technologies / tools used, development methodology, implementation details and major modules (algorithm / pseudocode).</p>
+
+<h2>6.1 Technologies, tools and methodology</h2>
+<table>
+  <tr><th>Area</th><th>Choice</th></tr>
+  <tr><td>Language / UI</td><td>Kotlin 1.9, Jetpack Compose (Material 3), single-Activity</td></tr>
+  <tr><td>SDK</td><td>minSdk 26, targetSdk 34, compileSdk 34; AGP 8.7, Gradle 8.9</td></tr>
+  <tr><td>Radio</td><td>BluetoothLeAdvertiser + BluetoothLeScanner; manufacturer-specific data (company ID 0xFFFF); AdvertisingSetParameters for 1M and LE Coded (S=8); ScanSettings legacy=false + PHY_LE_ALL_SUPPORTED</td></tr>
+  <tr><td>Sensors</td><td>TYPE_PRESSURE (relative altitude, EMA-smoothed); TYPE_LINEAR_ACCELERATION (immobility); LocationManager GPS / PASSIVE — no Play Services, no network</td></tr>
+  <tr><td>Persistence</td><td>SharedPreferences (identity, config) + atomic JSON snapshot of the store and detected collapses in filesDir</td></tr>
+  <tr><td>Lifecycle</td><td>Foreground service (connectedDevice type); coalesced state pump at ≤ 4 Hz</td></tr>
+  <tr><td>Testing / CI</td><td>JUnit4, 82 JVM unit tests; GitHub Actions runs the tests plus assembleDebug on every push</td></tr>
+  <tr><td>Hard constraints</td><td>No network calls, no crypto library, no downloaded map tiles — airplane-mode native</td></tr>
+  <tr><td>Methodology</td><td>Phased, checkpoint-gated build H0→H8 (capability probe → codec + tests → advertiser / scanner → store / relay → Dead Man's Packet → barometer → three UIs → 500-node simulator → three-phone field validation), then tiered hardening</td></tr>
+</table>
+
+<h2>6.2 Core algorithm (pseudocode)</h2>
+<pre># --- build this device's heartbeat (every duty-cycle tick) ---
+function BUILD_HEARTBEAT(now):
+    batt      = effectiveBatteryPercent()
+    interval  = LADDER_INTERVAL(batt)            # 1 / 10 / 60 / 300 s
+    phy       = LADDER_PHY(batt)                 # Coded / alternate / 1M
+    fix       = freshGpsFix(maxAge = 10 min)     # else NO_FIX
+    status    = userAssertion()
+                or (RESPONDER if hasResponderKey and mode == RESPONDER)
+                or (RISING_WATER   if altimeter.rising)
+                or (TRAPPED_DEBRIS if stillness.isStill(now, 5 min))
+                or UNKNOWN
+    pkt   = Packet(v=1, type=STATUS, deviceId, deltaPos(origin, fix),
+                   status, severity, casualties = SelfReport.headcount,
+                   stampMinutes(now), battNibble, hop = 0,
+                   nextExpectedTx = interval,
+                   altDelta = altimeter.deltaByte(), altTrend = altimeter.trend())
+    bytes = ENCODE_31B(pkt)
+    signingKey = responderKey if status == RESPONDER else deviceKey
+    bytes[19..22] = SHA256(signingKey || bytes[0..18])[0..3]
+    ADVERTISE(bytes, phy)
+
+# --- on every received advertisement ---
+function ON_PACKET(bytes, rssi, tRx):
+    if len(bytes) != 31 or not AUTH_SHAPE_OK(bytes): return
+    cid = SHA256( maskHopAndDropAuth(bytes) )
+    if STORE.contains(cid):
+        STORE.fold(cid, rssi, tRx); return             # dedup: CRDT no-op
+    STORE.put(cid, bytes, tRx)                          # new record
+    pkt = DECODE(bytes)
+    if pkt.deviceId != myId:
+        SILENCE.onPacket(pkt.deviceId, pkt, tRx)
+    if IS_RESOLVE(bytes) and VERIFY(bytes, responderKey):
+        RESOLVE_LOG.add(prefix(bytes))                  # mark that report handled
+
+# --- relay pump (round-robin; never starves this device's own signal) ---
+every PUMP_PERIOD (2 s):
+    result = SILENCE.tick(now)
+    for transition in result: LOG(transition, wallClock(now))
+    if pumpTick mod 3 == 0:
+        p = STORE.nextCarried(skip = devices believed EXPECTED / UNEXPECTED silent)
+        if p and hop(p) &lt; 15: ADVERTISE( INCREMENT_HOP(p) )   # copy; original untouched
+    else:
+        ADVERTISE( BUILD_HEARTBEAT(now) )
+
+# --- Dead Man's Packet: classify one device (each tick) ---
+function RECLASSIFY(track, now):
+    promised = track.nextExpectedTx * 1000
+    grace    = max(8 s, 2 * promised)
+    overdue  = now - (track.lastHeard + promised)
+    next = ALIVE               if overdue &lt; grace
+         = EXPECTED_SILENCE    if track.battery &lt;= 10
+         = UNEXPECTED_SILENCE  if overdue &gt; 3 * promised
+         = OVERDUE             otherwise
+    if next != track.state:
+        LOG(track.id, track.state, "->", next, wallClock(now))
+        track.state = next
+        track.unexpectedSince = now if next == UNEXPECTED_SILENCE else null
+
+# --- area destruction from correlated silence ---
+function DETECT_CELL_LOSS(now):
+    for (cell, members) in tracks grouped by ~100 m grid cell:
+        silent = members where unexpectedSince != null
+        if |members| &gt;= 3
+           and |silent| &gt;= 0.8 * |members|
+           and (max(silentSince) - min(silentSince)) &lt;= 120 s
+           and cell not already flagged:
+              FLAG CELL_LOSS(cell, |members|, |silent|,
+                             firstSilent, lastSilent, detectedAt = now)</pre>
+
+<h2>6.3 Major modules</h2>
+<table>
+  <tr><th>Module</th><th>Responsibility</th></tr>
+  <tr><td>PacketCodec</td><td>encode / decode 31 B, contentId, incrementHop, verifyAuthWithKey, buildResolve</td></tr>
+  <tr><td>ReportStore</td><td>content-addressed set, dedup, lowest-hop-wins, round-robin relayBatch, union mergeFrom</td></tr>
+  <tr><td>SilenceEvaluator</td><td>Dead Man's Packet — per-device state, timestamped transition log, detectCellLoss</td></tr>
+  <tr><td>TriageScorer</td><td>single rank: rising-water+climbing → just-lost → trapped-below-grade → about-to-go-silent → severity</td></tr>
+  <tr><td>CorroborationScorer</td><td>0–1 cell confidence from distinct devices, hop-path diversity, plausibility, key-verified responder</td></tr>
+  <tr><td>Barometry / RelativeAltimeter</td><td>pressure → smoothed relative altitude + trend; graceful no-barometer</td></tr>
+  <tr><td>StillnessTracker</td><td>linear-acceleration magnitude → sustained immobility → inferred TRAPPED</td></tr>
+  <tr><td>SimulatedTransport</td><td>500 nodes on Rasuwagadhi geography, scripted mass-silence event</td></tr>
+  <tr><td>TransportController / BleForegroundService</td><td>keep the radio alive; own the store and evaluators; drive the pump; live EOC auto-export</td></tr>
+</table>
+
+<h1>Component 7 — Results and Discussion <span style="font-weight:400;font-size:12px">(Max. 3 slides)</span></h1>
+<p class="sub">Results obtained, analysis of findings, comparison where applicable, and discussion of outcomes (tabular form, graphs, screenshots).</p>
+
+<h2>7.1 Functional validation — three real phones, airplane mode</h2>
+<p>Devices: Samsung Galaxy S23 (trapped), Realme 7 (carrier), Motorola Edge 50 Pro (responder). Single-phone re-check on the Realme 7 on 2026-09-04.</p>
+<table>
+  <tr><th>#</th><th>Test</th><th>Result</th><th>Evidence</th></tr>
+  <tr><td>T1</td><td>Direct link, 1 hop</td><td>PASS</td><td>Responder shows both phones, 1 hop, LIVE</td></tr>
+  <tr><td>T2</td><td>Store-carry-forward (the demo)</td><td>PASS</td><td>S23 with Bluetooth OFF after pickup; its TRAPPED signal still reached the responder at 2 hops, relayed by the carrier</td></tr>
+  <tr><td>T3</td><td>Unexpected silence</td><td>PASS</td><td>Healthy battery, powered off → row turns SILENT (red) with the wall-clock time it went dark</td></tr>
+  <tr><td>T4</td><td>Expected silence</td><td>PASS</td><td>8% battery (declares 300 s), powered off → EXPECTED (grey), no escalation — the two are told apart</td></tr>
+  <tr><td>T5</td><td>Barometric floor</td><td>PASS (±2 m)</td><td>one floor read +2 m (spec ~±1 m); sign and magnitude correct</td></tr>
+  <tr><td>T6</td><td>Drowning escalation</td><td>PASS</td><td>"Water rising" + climbing altitude → jumps to top of the triage list</td></tr>
+  <tr><td>T7</td><td>Dig Here proximity</td><td>PASS</td><td>bar and WARMER / COLDER trend track walking toward and away</td></tr>
+  <tr><td>T8</td><td>CELL_LOSS</td><td>PASS</td><td>500-node simulator — one cell flips to a hatched, timestamped "12 dark" hole</td></tr>
+  <tr><td>—</td><td>Coded PHY reception</td><td>PASS</td><td>rxByPhy = {CODED, ONE_M} confirmed on the Motorola</td></tr>
+  <tr><td>—</td><td>Capability probe (H0)</td><td>—</td><td>S23 / Realme 7 / Motorola: isLeCodedPhySupported, isLeExtendedAdvertisingSupported, isMultipleAdvertisementSupported all true; max adv data 192 B; barometer present only on the S23</td></tr>
+</table>
+
+<h2>7.2 Quantitative results and comparison</h2>
+<p><b>Table A — engineering results (this build):</b></p>
+<table>
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>Packet size</td><td>31 B core (BLE legacy-safe) — "a life in 31 bytes"</td></tr>
+  <tr><td>Unit tests / CI</td><td>82 tests, 100% pass, on every push</td></tr>
+  <tr><td>Simulator scale</td><td>500 nodes; Rasuwagadhi toll curve 22 → 95 → 469 → 626 over 72 h, replayed in ~90 s, no dropped frames</td></tr>
+  <tr><td>Duty-cycle range</td><td>1 s → 300 s; PHY Coded → 1M as battery falls</td></tr>
+  <tr><td>CELL_LOSS latency</td><td>detected within the 120 s correlation window; transition timestamped to the second</td></tr>
+  <tr><td>Heartbeat on Realme 7 @ 27%</td><td>interval 60 s, PHY 1M, next_expected_tx = 60, position encoded after origin set — ladder behaving exactly as specified</td></tr>
+  <tr><td>Crash safety</td><td>store + collapses + silence tracks reload after an OS kill (24 h age cutoff)</td></tr>
+</table>
+
+<p><b>Table B — comparison with prior art:</b></p>
+<table>
+  <tr><th>Capability</th><th>Bridgefy / FireChat</th><th>TeamPhone [3]</th><th>Epidemic / PRoPHET [1,2]</th><th>Zone (ours)</th></tr>
+  <tr><td>Works with zero infrastructure</td><td>Yes</td><td>Partial (uses cellular when up)</td><td>Yes (theory)</td><td>Yes</td></tr>
+  <tr><td>No pairing / no GATT connection</td><td>No (GATT)</td><td>Yes</td><td>n/a</td><td>Yes (connectionless adv.)</td></tr>
+  <tr><td>Works when the user is unconscious</td><td>No</td><td>No (needs grouping)</td><td>No</td><td>Yes (sensor-derived status)</td></tr>
+  <tr><td>Dual-PHY (Coded for range)</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
+  <tr><td>Battery-honest duty cycle</td><td>No</td><td>Partial</td><td>No</td><td>Yes (ladder + honest next_expected_tx)</td></tr>
+  <tr><td>Infers area destruction from silence</td><td>No</td><td>No</td><td>No</td><td>Yes (Dead Man's Packet + CELL_LOSS)</td></tr>
+  <tr><td>Vertical (floor) triage</td><td>No</td><td>No</td><td>No</td><td>Yes (relative barometry)</td></tr>
+  <tr><td>Spoof / Sybil resistance</td><td>Broken [7]</td><td>Limited</td><td>None</td><td>Yes (hashed ID, auth-shape, plausibility, key-verified responder)</td></tr>
+  <tr><td>Confidence-scored situational map</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
+</table>
+
+<p><b>Suggested graphs for the slide:</b></p>
+<ul>
+  <li>Line graph — replayed toll curve (deaths vs. hours: 22, 95, 469, 626) with map "cells collapsed" overlaid, showing the map converging in ~90 s of stage time.</li>
+  <li>Bar chart — advertised interval and active PHY versus battery % (1 s/Coded, 10 s/alt, 60 s/1M, 300 s/1M).</li>
+  <li>Timeline — T3 versus T4: "device powered off" marker, then time-to-classification, one bar ending in UNEXPECTED_SILENCE (escalate) and one in EXPECTED_SILENCE (quiet).</li>
+</ul>
+
+<h2>7.3 Discussion of outcomes</h2>
+<ul>
+  <li><b>The USP is validated end-to-end.</b> T3 versus T4 on real hardware proves the core claim — the network distinguishes an announced silence (dying battery) from a catastrophic one (device destroyed), which no prior mesh system does.</li>
+  <li><b>The range / energy trade-off is real and managed.</b> Literature puts Coded PHY at ~300 m urban and &gt; 1 km ideal [5]; Zone spends that reach only while battery allows, then retreats to 1M — keeping next_expected_tx truthful at every rung.</li>
+  <li><b>"Search this block" becomes "search this 100 m cell."</b> CELL_LOSS plus confidence scoring convert fragmented reports into a ranked, timestamped picture; the barometric delta adds the vertical axis GPS cannot [6].</li>
+  <li><b>Security posture.</b> Against the Bridgefy failure modes [7], Zone removes plaintext social graphs (broadcast-only, hashed IDs), rejects malformed frames at the relay, and makes a fabricated-node flood unable to move the map.</li>
+  <li><b>Limitations (stated honestly).</b> 2.4 GHz penetrates rubble poorly — mitigated by days-long low-duty advertising until a rescuer walks within ~10 m; iOS cannot advertise in the background (Apple restriction); auth is a truncated MAC, not per-device Ed25519 (a deliberate scope cut); full three-phone RESOLVE-propagation and a 30-minute soak test remain to be run.</li>
+  <li><b>Future work.</b> LoRa / satellite bridge on the responder phone for the last mile; per-device signatures; full-app localisation; standard GeoJSON export for agency GIS.</li>
+</ul>
+
+<h1>References</h1>
+<ol class="refs">
+  <li>A. Vahdat and D. Becker, "Epidemic Routing for Partially Connected Ad Hoc Networks," Technical Report CS-2000-06, Duke University, 2000.</li>
+  <li>A. Lindgren, A. Doria and O. Schelén, "Probabilistic Routing in Intermittently Connected Networks," Proc. ACM MobiHoc 2003 (poster); formalised as IRTF RFC 6693, 2012.</li>
+  <li>Z. Lu, G. Cao and T. La Porta, "TeamPhone: Networking Smartphones for Disaster Recovery," IEEE Transactions on Mobile Computing, vol. 16, no. 12, pp. 3554–3567, 2017.</li>
+  <li>S. M. Darroudi and C. Gomez, "Bluetooth Low Energy Mesh Networks: A Survey," Sensors (MDPI), vol. 17, no. 7, art. 1467, 2017.</li>
+  <li>A. R. Sheikh et al., "Adaptive Physical Layer Selection for Bluetooth 5: Measurements and Simulations," Wireless Communications and Mobile Computing, vol. 2021, art. 8842919, Wiley/Hindawi.</li>
+  <li>W. Falcon and H. Schulzrinne, "Predicting Floor-Level for 911 Calls with Neural Networks and Smartphone Sensor Data," arXiv:1710.11122, 2017.</li>
+  <li>M. R. Albrecht, J. Blasco, R. B. Jensen and L. Mareková, "Mesh Messaging in Large-Scale Protests: Breaking Bridgefy," in Topics in Cryptology – CT-RSA 2021, LNCS vol. 12704, Springer; IACR ePrint 2021/214.</li>
+  <li>T. Watanabe et al., "Delay-Tolerant Networking for Tsunami Evacuation on the Small Island of Hachijojima: A Study of Epidemic and Prophet Routing," arXiv:2601.00109, 2026.</li>
+  <li>"The earthquake impact on telecommunications infrastructure in Nepal: a preliminary spatial assessment," International Journal of Disaster Risk Reduction (Elsevier), 2023.</li>
+</ol>
+
+</body>
+</html>
