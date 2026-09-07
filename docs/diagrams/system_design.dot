@@ -1,0 +1,96 @@
+// Zone — System design: layered architecture + data flow.
+// Render:  dot -Tsvg system_design.dot -o system_design.svg
+digraph system {
+  rankdir=TB;
+  label="ZONE  —  DIAGRAM 2 : SYSTEM DESIGN\n(layered architecture + data flow:  Android edge to transport to core logic to UI,  plus the store-carry-forward mesh)";
+  labelloc="t"; fontname="Helvetica-Bold"; fontsize=15; fontcolor="#0B3D33";
+  newrank=true;
+  bgcolor="white";
+  splines=spline;
+  concentrate=true;
+  nodesep=0.30; ranksep=0.60;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10,
+        fillcolor="#EEF3F1", color="#0B3D33", margin="0.12,0.08"];
+  edge [color="#4A5157", fontsize=9, fontname="Helvetica", arrowsize=0.8];
+
+  // ---------- the mesh (store-carry-forward), shown once ----------
+  subgraph cluster_mesh {
+    label="THE MESH  —  store-carry-forward, no infrastructure"; labeljust="l";
+    style="rounded"; color="#B5311B"; fontsize=10;
+    A [label="Phone A (trapped)\nBLE off after pickup", shape=oval, fillcolor="#F6E6D8"];
+    B [label="Phone B (carrier)\nwalks A to C, hop++", shape=oval, fillcolor="#F6E6D8"];
+    C [label="Phone C (responder / EOC)\nholds A at hop 2", shape=oval, fillcolor="#F6E6D8"];
+    A -> B [label="advertise 31 B", style=bold];
+    B -> C [label="advertise 31 B", style=bold];
+  }
+
+  // ---------- Layer 1: Android edge ----------
+  subgraph cluster_edge {
+    label="ANDROID EDGE"; labeljust="l"; style="rounded"; color="#0B3D33"; fontsize=10;
+    sensors [label="Sensors\npressure · linear-accel · GNSS · battery"];
+    hb      [label="HeartbeatSource\nbuild the 31-byte packet"];
+    codec   [label="PacketCodec\nencode / decode 31 B · sign (SHA-256 MAC)\ncontentId · verifyAuthWithKey"];
+    fgs     [label="BleForegroundService\nkeeps radio alive · Bluetooth watch\nAlertNotifier + full-screen AlertActivity"];
+    persist [label="StatePersistence\natomic JSON snapshot"];
+    cfg     [label="IncidentConfig\norigin · shared key"];
+    { rank=same; sensors; hb; codec; fgs; persist; cfg }
+  }
+
+  // ---------- Layer 2: Transport interface ----------
+  subgraph cluster_tx {
+    label="TRANSPORT  —  interface: advertise(bytes) / onPacket(cb) / start / stop"; labeljust="l";
+    style="rounded"; color="#0B3D33"; fontsize=10;
+    ble  [label="BleTransport\nBLE advertise + scan · dual PHY (1M + Coded)", fillcolor="#DDEAE6"];
+    sim  [label="SimulatedTransport\n500 in-process nodes"];
+    file [label="FileTransport\nJSON sneakernet"];
+    { rank=same; ble; sim; file }
+  }
+
+  // ---------- Layer 3: Core logic ----------
+  subgraph cluster_core {
+    label="CORE LOGIC  —  pure Kotlin · JVM unit-tested · zero Android imports"; labeljust="l";
+    style="rounded"; color="#0B3D33"; fontsize=10;
+    store   [label="ReportStore\ncontent-addressed set (CRDT)\ndedup · lowest-hop wins · union merge"];
+    silence [label="SilenceEvaluator\nDead Man's Packet\nALIVE / EXPECTED / UNEXPECTED + CELL_LOSS",
+             fillcolor="#DDEAE6", penwidth=2];
+    triage  [label="TriageScorer\nsingle-score priority"];
+    corr    [label="CorroborationScorer\ncell confidence · Sybil-resistant"];
+    logs    [label="ResolveLog · AlertLog\nset-union · expiry"];
+    baro    [label="Barometry · StillnessTracker\nGridCells"];
+    { rank=same; store; silence; triage; corr; logs; baro }
+  }
+
+  // ---------- Layer 4: UI ----------
+  subgraph cluster_ui {
+    label="UI LAYER  —  Jetpack Compose"; labeljust="l"; style="rounded"; color="#0B3D33"; fontsize=10;
+    citizen   [label="CitizenScreen\n'You are being heard' + count\nBluetooth / alert banners"];
+    responder [label="ResponderScreen + DigHere\ntriage list · proximity + hot/cold\nIssue Alert"];
+    map       [label="MapScreen / EOC\nseverity grid · silence layer\nreplay · live export"];
+    { rank=same; citizen; responder; map }
+  }
+
+  // ---------- data flow (kept minimal) ----------
+  sensors -> hb    [label="battery / altitude /\nmotion / GPS fix"];
+  cfg     -> hb    [label="origin · key", style=dashed];
+  hb      -> codec [label="Packet"];
+  codec   -> ble   [label="advertise 31 B (signed)"];
+  ble     -> codec [label="onPacket (raw 31 B)"];
+  codec   -> store [label="decode · auth-shape · contentId dedup"];
+  codec   -> logs  [label="RESOLVE (type 1) / ALERT (type 2) — verified"];
+  store   -> silence [label="per-device fold"];
+  store   -> corr;
+  silence -> triage;
+  baro    -> silence [style=invis];
+  store   -> persist [label="debounced snapshot"];
+  persist -> store   [label="restore on start", style=dashed];
+  logs    -> fgs     [label="raise full-screen alert", color="#B5311B", style=bold];
+
+  triage  -> responder [label="ranked rows"];
+  silence -> responder [label="silence state"];
+  silence -> citizen   [label="peers heard"];
+  store   -> map        [label="reports"];
+  corr    -> map        [label="confidence"];
+  logs    -> map        [label="RESOLVE / ALERT filter"];
+
+  C -> ble [label="relay in, hop++", style=bold, color="#B5311B"];
+}

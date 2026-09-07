@@ -1,0 +1,48 @@
+// Zone — Methodology flowchart (PBL Component 5.  Render:  dot -Tsvg methodology.dot -o methodology.svg)
+digraph methodology {
+  rankdir=TB;
+  label="ZONE  —  DIAGRAM 1 : METHODOLOGY\n(phased, checkpoint-gated development; each phase validated on a real phone; findings feed back to design)";
+  labelloc="t"; fontname="Helvetica-Bold"; fontsize=15; fontcolor="#0B3D33";
+  bgcolor="white";
+  node [shape=box, style="rounded,filled", fontname="Helvetica",
+        fillcolor="#EEF3F1", color="#0B3D33", fontsize=11, margin="0.14,0.09"];
+  edge [color="#4A5157", fontname="Helvetica", fontsize=9, arrowsize=0.8];
+
+  start [label="Problem analysis\nPS2 comms blackout + PS5 information fog\n(2015 Gorkha earthquake context)",
+         shape=oval, fillcolor="#0B3D33", fontcolor="white"];
+  lit   [label="Literature review — 7 papers\nDTN epidemic routing · PRoPHET · BLE mesh survey\nBluetooth-5 PHY measurements · barometric floor level\nBreaking Bridgefy · TeamPhone"];
+  gap   [label="Gap identification\nsilence is discarded · needs user action ·\nno trustworthy situational picture"];
+  req   [label="Requirements & hard constraints\nnative Kotlin · 31-byte packet contract · transport = interface\nno network calls · no crypto library · minSdk 26"];
+  des   [label="System design\nconnectionless dual-PHY BLE · epidemic store-carry-forward\nDead Man's Packet · battery to PHY ladder · three role UIs"];
+
+  subgraph cluster_impl {
+    label="Implementation — phased, checkpoint-gated (H0 to H8)";
+    labeljust="l"; style="rounded"; color="#0B3D33"; fontname="Helvetica"; fontsize=10;
+    h0 [label="H0  Capability probe on 3 phones (PHY flags)"];
+    h1 [label="H1  Packet codec + 10 test vectors (pure Kotlin)"];
+    h2 [label="H2  Advertiser + scanner — 1M and Coded PHY"];
+    h3 [label="H3  Store + relay — content-addressed, dedup, hop++"];
+    h4 [label="H4  Dead Man's Packet — SilenceEvaluator (the USP)",
+        fillcolor="#DDEAE6", penwidth=2];
+    h5 [label="H5  Barometer — relative altitude + trend"];
+    h6 [label="H6  UI — Citizen / Responder / Map"];
+    h7 [label="H7  Simulator — 500 nodes, Rasuwagadhi toll curve"];
+    h0 -> h1 -> h2 -> h3 -> h4 -> h5 -> h6 -> h7;
+  }
+
+  chk  [label="Runs on a real phone\nafter every phase?", shape=diamond,
+        fillcolor="#F3F1EA", fontsize=10];
+  cut  [label="Apply the documented cut\n(never push the schedule)", fillcolor="#F6E6D8"];
+  val  [label="H8  Three-phone validation\nairplane mode · tests T1 to T8"];
+  hard [label="Tiered hardening\npersistence · real GPS + incident origin · immobility to TRAPPED\nresponder key · RESOLVE · ALERT · Sybil guards"];
+  ci   [label="Continuous integration\n87 JVM unit tests on every push"];
+  end  [label="Validated prototype", shape=oval, fillcolor="#0B3D33", fontcolor="white"];
+
+  start -> lit -> gap -> req -> des -> h0;
+  h7 -> chk;
+  chk -> cut [label="  no"];
+  cut -> chk [style=dashed];
+  chk -> val [label="  yes"];
+  val -> hard -> ci -> end;
+  val -> des [label="  findings feed back", style=dashed, constraint=false];
+}
