@@ -164,6 +164,48 @@ fun TransportDebugScreen() {
         }
         meshMsg?.let { KeyVal("last", it) }
 
+        Header("CAP alert (government interop)")
+        Text(
+            "Common Alerting Protocol — the open format NDMA/SACHET and other " +
+                "official systems use underneath. Zone never fetches this over a " +
+                "network; import a CAP file you already have to carry it into the " +
+                "mesh, or export what the mesh is carrying as a CAP file for handoff.",
+            fontSize = 12.sp,
+        )
+        var capMsg by remember { mutableStateOf<String?>(null) }
+        val capImportPicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.GetContent(),
+        ) { uri ->
+            if (uri != null) {
+                val text = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+                capMsg = when {
+                    text == null -> "could not read that file"
+                    TransportController.issueFromCap(context, text) -> "carried into the mesh"
+                    else -> "not a usable CAP alert, or no responder key provisioned"
+                }
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { capImportPicker.launch("*/*") }) { Text("Import CAP file") }
+            OutlinedButton(onClick = {
+                val f = TransportController.writeCapAlertFile(context)
+                capMsg = if (f != null) "wrote ${f.name}" else "no active alert to export"
+            }) { Text("Export top alert → file") }
+            OutlinedButton(onClick = {
+                val xml = TransportController.exportTopAlertAsCap()
+                if (xml == null) { capMsg = "no active alert to export" } else {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "application/xml"
+                        putExtra(android.content.Intent.EXTRA_TEXT, xml)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(send, "Share CAP alert"))
+                }
+            }) { Text("Share…") }
+        }
+        capMsg?.let { KeyVal("last", it) }
+
         Header("Live EOC")
         var autoEoc by remember { mutableStateOf(TransportController.eocAutoExport) }
         FilterChip(

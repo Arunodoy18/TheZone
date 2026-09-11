@@ -432,21 +432,63 @@ object TransportController {
         validForMinutes: Int,
     ): Boolean {
         val ctx = context.applicationContext
+        val fix = com.thezone.sensors.Position.snapshot()
+        val fresh = fix != null && fix.ageMillis() <= 10L * 60 * 1000
+        val dLat = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lat, com.thezone.config.IncidentConfig.originLat(ctx)) else com.thezone.packet.Packet.NO_FIX
+        val dLon = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lon, com.thezone.config.IncidentConfig.originLon(ctx)) else com.thezone.packet.Packet.NO_FIX
+        return broadcastAlert(ctx, category, phraseCode, dLat, dLon, radiusMeters, validForMinutes, tag = "ALERT issued")
+    }
+
+    /**
+     * Parse a CAP 1.2 XML alert — read from a file the user already has,
+     * never fetched over a network (CLAUDE.md rule 4, see [com.thezone.cap.CapAlert])
+     * — and carry it into the mesh as a signed Zone ALERT, exactly as if it
+     * had been typed into IssueAlertSheet. Still needs this phone's
+     * provisioned responder/authority key: a CAP file doesn't bypass Zone's
+     * authenticity model, it just prefills the form. False on anything
+     * unparseable or without the key.
+     */
+    fun issueFromCap(context: Context, capXml: String): Boolean {
+        val fields = com.thezone.cap.CapAlert.parse(capXml) ?: return false
+        val ctx = context.applicationContext
+        val category = com.thezone.cap.CapAlert.categoryFor(fields.severity)
+        val phraseCode = com.thezone.cap.CapAlert.phraseCodeFor(fields)
+        val (dLat, dLon) = if (fields.centerLat != null && fields.centerLon != null) {
+            com.thezone.packet.GeoPosition.encodeDelta(fields.centerLat, com.thezone.config.IncidentConfig.originLat(ctx)) to
+                com.thezone.packet.GeoPosition.encodeDelta(fields.centerLon, com.thezone.config.IncidentConfig.originLon(ctx))
+        } else {
+            com.thezone.packet.Packet.NO_FIX to com.thezone.packet.Packet.NO_FIX
+        }
+        // buildAlert() itself clamps to the packet's 0..255*20m range.
+        val radiusMeters = (((fields.radiusKm ?: 2.0) * 1000).toInt()).coerceAtLeast(0)
+        val validForMinutes = (fields.expiresMinutesFromSent ?: 120).coerceIn(1, 65535)
+        return broadcastAlert(
+            ctx, category, phraseCode, dLat, dLon, radiusMeters, validForMinutes,
+            tag = "CAP_ALERT carried id=${fields.identifier}",
+        )
+    }
+
+    private fun broadcastAlert(
+        ctx: Context,
+        category: Int,
+        phraseCode: Int,
+        deltaLat: Int,
+        deltaLon: Int,
+        radiusMeters: Int,
+        validForMinutes: Int,
+        tag: String,
+    ): Boolean {
         appContext = ctx
         val key = com.thezone.config.IncidentConfig.responderKey(ctx) ?: return false
         val t = transport ?: return false
         val id = DeviceKeyStore.identity(ctx)
         val pct = HeartbeatSource.effectiveBatteryPercent(ctx)
-        val fix = com.thezone.sensors.Position.snapshot()
-        val fresh = fix != null && fix.ageMillis() <= 10L * 60 * 1000
-        val dLat = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lat, com.thezone.config.IncidentConfig.originLat(ctx)) else com.thezone.packet.Packet.NO_FIX
-        val dLon = if (fresh) com.thezone.packet.GeoPosition.encodeDelta(fix!!.lon, com.thezone.config.IncidentConfig.originLon(ctx)) else com.thezone.packet.Packet.NO_FIX
         val now = System.currentTimeMillis()
 
         val bytes = PacketCodec.buildAlert(
             issuer = id, authorityKey = key,
             category = category, phraseCode = phraseCode,
-            deltaLat = dLat, deltaLon = dLon,
+            deltaLat = deltaLat, deltaLon = deltaLon,
             radiusMeters = radiusMeters,
             issuedAtMinutes = com.thezone.packet.EventClock.stampMinutes(now),
             validForMinutes = validForMinutes,
@@ -464,10 +506,64 @@ object TransportController {
             com.thezone.notify.SirenBeacon.start(ctx, rec)
             com.thezone.notify.BluetoothNameBeacon.start(ctx, rec)
         }
-        Log.w("TheZone", "ALERT issued cat=$category phrase=$phraseCode radius=${radiusMeters}m valid=${validForMinutes}min")
+        Log.w("TheZone", "$tag cat=$category phrase=$phraseCode radius=${radiusMeters}m valid=${validForMinutes}min")
         ping()
         return true
     }
+
+    /**
+     * The single most severe active alert, written out as CAP 1.2 XML — so
+     * whatever the mesh carried becomes directly usable by NDMA, an NGO, or
+     * any standard emergency-management tool once connectivity returns, not
+     * just other Zone phones. Null if nothing is currently active. The
+     * precise alert centre isn't re-exported (the mesh only ever stores the
+     * coarse grid cell, not the original lat/lon) — a documented simplification.
+     */
+    fun exportTopAlertAsCap(): String? {
+        val rec = alertLog.active(System.currentTimeMillis()).firstOrNull() ?: return null
+        val severity = when {
+            rec.category >= PacketCodec.ALERT_EXTREME -> "Extreme"
+            rec.category >= PacketCodec.ALERT_WARNING -> "Severe"
+            rec.category == 2 -> "Moderate"
+            rec.category == 1 -> "Minor"
+            else -> "Unknown"
+        }
+        val sentIso = java.time.Instant.ofEpochMilli(rec.issuedAtMillis).toString()
+        val expiresIso = java.time.Instant.ofEpochMilli(rec.expiresAtMillis).toString()
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>zone-${rec.contentIdHex.take(16)}</identifier>
+  <sender>zone-mesh:${rec.issuerHex}</sender>
+  <sent>$sentIso</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <note>Carried by the Zone offline mesh, ${rec.hopCount} hop(s) from origin — not centrally verified.</note>
+  <info>
+    <category>Safety</category>
+    <event>${xmlEscape(com.thezone.packet.AlertText.categoryName(rec.category))}</event>
+    <urgency>Immediate</urgency>
+    <severity>$severity</severity>
+    <certainty>Unknown</certainty>
+    <headline>${xmlEscape(com.thezone.packet.AlertText.label(rec.phraseCode))}</headline>
+    <description>${xmlEscape(com.thezone.packet.AlertText.full(rec.phraseCode))}</description>
+    <expires>$expiresIso</expires>
+  </info>
+</alert>
+"""
+    }
+
+    /** Writes [exportTopAlertAsCap] to a pullable file. Null (no file written) if nothing is active. */
+    fun writeCapAlertFile(context: Context): java.io.File? {
+        val xml = exportTopAlertAsCap() ?: return null
+        val f = java.io.File(context.applicationContext.getExternalFilesDir(null), "thezone-alert.cap.xml")
+        f.writeText(xml)
+        return f
+    }
+
+    private fun xmlEscape(s: String): String = s
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\"", "&quot;").replace("'", "&apos;")
 
     private fun alertRecordFrom(bytes: ByteArray, receivedAtMillis: Long): AlertRecord {
         val a = PacketCodec.decodeAlert(bytes)
