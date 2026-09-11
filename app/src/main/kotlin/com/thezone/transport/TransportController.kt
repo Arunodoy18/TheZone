@@ -321,6 +321,7 @@ object TransportController {
         locationReader?.stop()
         motionReader?.stop()
         transport?.stop()
+        com.thezone.notify.SirenBeacon.stop()
         ping()
     }
 
@@ -450,11 +451,17 @@ object TransportController {
             validForMinutes = validForMinutes,
             batteryLevel = BatteryScale.percentToNibble(pct),
         )
+        val rec = alertRecordFrom(bytes, now)
         store.accept(bytes, rssiDbm = 0)
-        alertLog.add(alertRecordFrom(bytes, now))
+        alertLog.add(rec)
         t.advertise(bytes)
         lastAdvertisedHex = bytes.toHex()
         dirty = true
+        // The issuing phone is presumably at or near the hazard — it should
+        // physically announce too, not just wait for someone else to relay it.
+        if (category >= PacketCodec.ALERT_WARNING) {
+            com.thezone.notify.SirenBeacon.start(ctx, rec)
+        }
         Log.w("TheZone", "ALERT issued cat=$category phrase=$phraseCode radius=${radiusMeters}m valid=${validForMinutes}min")
         ping()
         return true
@@ -485,6 +492,7 @@ object TransportController {
         alertLog.clear()
         dirty = false
         appContext?.let { StatePersistence.delete(it) }
+        com.thezone.notify.SirenBeacon.stop()
         ping()
     }
 
@@ -540,7 +548,15 @@ object TransportController {
                 if (alertLog.add(rec)) {
                     dirty = true
                     if (rec.issuerHex != store.ownDeviceIdHex) {
-                        appContext?.let { com.thezone.notify.AlertNotifier.show(it, rec) }
+                        appContext?.let {
+                            com.thezone.notify.AlertNotifier.show(it, rec)
+                            // Every relaying phone becomes its own siren too —
+                            // the physical warning spreads hop by hop the same
+                            // way the packet does.
+                            if (rec.category >= PacketCodec.ALERT_WARNING) {
+                                com.thezone.notify.SirenBeacon.start(it, rec)
+                            }
+                        }
                     }
                 }
             }

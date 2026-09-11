@@ -27,6 +27,9 @@
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- SirenBeacon: continuous vibration for a WARNING/EXTREME alert -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- lets "Keep Zone alive" ask directly for the Doze exemption a background
          BLE advertiser needs; the screen falls back to the settings list if absent -->
     <uses-permission

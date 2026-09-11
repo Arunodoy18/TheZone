@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,14 +50,9 @@ class AlertActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true); setTurnScreenOn(true)
         }
-        runCatching {
-            val v = getSystemService(Vibrator::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 500, 200, 500, 200, 800), -1))
-            } else {
-                @Suppress("DEPRECATION") v?.vibrate(longArrayOf(0, 500, 200, 500, 200, 800), -1)
-            }
-        }
+        // SirenBeacon owns the sustained siren/vibrate/torch (started from
+        // TransportController the moment the alert was issued or relayed) —
+        // this activity is purely the visual takeover, so it doesn't also vibrate.
 
         val e = intent
         val category = e.getIntExtra(X_CAT, PacketCodec.ALERT_WARNING)
@@ -68,7 +61,12 @@ class AlertActivity : ComponentActivity() {
         val expires = e.getLongExtra(X_EXPIRES, System.currentTimeMillis())
         val radius = e.getIntExtra(X_RADIUS, 0)
 
-        setContent { AlertScreen(category, phrase, issued, expires, radius) { finish() } }
+        setContent {
+            AlertScreen(category, phrase, issued, expires, radius) {
+                SirenBeacon.stop()
+                finish()
+            }
+        }
     }
 
     @Composable
