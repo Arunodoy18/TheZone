@@ -50,8 +50,11 @@ object BluetoothNudge {
     }
 
     fun isBluetoothOn(context: Context): Boolean {
-        val adapter = context.getSystemService(BluetoothAdapter::class.java) ?: return false
-        return adapter.isEnabled
+        // BluetoothAdapter is not a fetchable system-service class — only
+        // BluetoothManager is. context.getSystemService(BluetoothAdapter::class.java)
+        // silently returns null on every device, which pins this at "off" forever.
+        val manager = context.getSystemService(android.bluetooth.BluetoothManager::class.java)
+        return manager?.adapter?.isEnabled ?: false
     }
 
     /** Show the reminder iff Bluetooth is currently off; otherwise clear it. */
