@@ -30,6 +30,11 @@
     <!-- SirenBeacon: continuous vibration for a WARNING/EXTREME alert -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- StatusTexter: opt-in "text my status" to hand-typed emergency contacts
+         when the phone catches a signal. Dangerous permission, requested at
+         runtime from EmergencyContactsScreen — never assumed granted. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
     <!-- lets "Keep Zone alive" ask directly for the Doze exemption a background
          BLE advertiser needs; the screen falls back to the settings list if absent -->
     <uses-permission

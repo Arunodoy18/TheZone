@@ -51,6 +51,7 @@ import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
 import com.thezone.ui.BatterySetupScreen
 import com.thezone.ui.CitizenScreen
+import com.thezone.ui.EmergencyContactsScreen
 import com.thezone.ui.LandingScreen
 import com.thezone.ui.MapScreen
 import com.thezone.ui.ProbeScreen
@@ -84,6 +85,7 @@ private fun Root() {
     var showSwitcher by remember { mutableStateOf(false) }
     var showDebug by remember { mutableStateOf(false) }
     var showBattery by remember { mutableStateOf(false) }
+    var showContacts by remember { mutableStateOf(false) }
     // shown on every cold start; survives rotation but not the task being cleared
     var showLanding by rememberSaveable { mutableStateOf(true) }
 
@@ -94,6 +96,11 @@ private fun Root() {
 
     if (showBattery) {
         BatterySetupScreen(onBack = { showBattery = false })
+        return
+    }
+
+    if (showContacts) {
+        EmergencyContactsScreen(onBack = { showContacts = false })
         return
     }
 
@@ -147,6 +154,7 @@ private fun Root() {
                     },
                     onDebug = { showSwitcher = false; showDebug = true },
                     onBattery = { showSwitcher = false; showBattery = true },
+                    onContacts = { showSwitcher = false; showContacts = true },
                     onDismiss = { showSwitcher = false },
                 )
             }
@@ -223,6 +231,7 @@ private fun ModeSwitcher(
     onPick: (AppMode) -> Unit,
     onDebug: () -> Unit,
     onBattery: () -> Unit,
+    onContacts: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Box(
@@ -251,6 +260,8 @@ private fun ModeSwitcher(
             }
             Spacer(Modifier.height(10.dp))
             ZoneButton("Keep Zone alive (battery)", filled = false) { onBattery() }
+            Spacer(Modifier.height(6.dp))
+            ZoneButton("Text my status (SMS)", filled = false) { onContacts() }
             Spacer(Modifier.height(6.dp))
             ZoneButton("Debug (H0 / H2)", filled = false) { onDebug() }
         }

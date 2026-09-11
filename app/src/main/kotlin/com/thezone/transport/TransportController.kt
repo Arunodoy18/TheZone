@@ -322,6 +322,7 @@ object TransportController {
         motionReader?.stop()
         transport?.stop()
         com.thezone.notify.SirenBeacon.stop()
+        com.thezone.notify.BluetoothNameBeacon.stop()
         ping()
     }
 
@@ -461,6 +462,7 @@ object TransportController {
         // physically announce too, not just wait for someone else to relay it.
         if (category >= PacketCodec.ALERT_WARNING) {
             com.thezone.notify.SirenBeacon.start(ctx, rec)
+            com.thezone.notify.BluetoothNameBeacon.start(ctx, rec)
         }
         Log.w("TheZone", "ALERT issued cat=$category phrase=$phraseCode radius=${radiusMeters}m valid=${validForMinutes}min")
         ping()
@@ -493,6 +495,7 @@ object TransportController {
         dirty = false
         appContext?.let { StatePersistence.delete(it) }
         com.thezone.notify.SirenBeacon.stop()
+        com.thezone.notify.BluetoothNameBeacon.stop()
         ping()
     }
 
@@ -550,11 +553,12 @@ object TransportController {
                     if (rec.issuerHex != store.ownDeviceIdHex) {
                         appContext?.let {
                             com.thezone.notify.AlertNotifier.show(it, rec)
-                            // Every relaying phone becomes its own siren too —
-                            // the physical warning spreads hop by hop the same
-                            // way the packet does.
+                            // Every relaying phone becomes its own siren + BT
+                            // name beacon too — the physical warning spreads
+                            // hop by hop the same way the packet does.
                             if (rec.category >= PacketCodec.ALERT_WARNING) {
                                 com.thezone.notify.SirenBeacon.start(it, rec)
+                                com.thezone.notify.BluetoothNameBeacon.start(it, rec)
                             }
                         }
                     }
@@ -654,6 +658,9 @@ object TransportController {
             val nowMs = System.currentTimeMillis()
             if (dirty && nowMs - lastSaveMillis >= SAVE_DEBOUNCE_MS) saveNow(ctx)
             maybeWriteEoc(ctx, nowMs)
+            // Opt-in, rate-limited internally — a no-op unless the user turned
+            // it on and typed numbers in (docs/PRD.md, CLAUDE.md rule 4).
+            com.thezone.notify.StatusTexter.maybeAttempt(ctx)
         } catch (e: Throwable) {
             diagnosticsError("relay pump: ${e.message}")
         }
