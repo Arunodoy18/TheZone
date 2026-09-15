@@ -144,6 +144,11 @@ const map = new maplibregl.Map({
   container: "map",
   center: [ORIGIN_LON, ORIGIN_LAT],
   zoom: 11, pitch: 55, bearing: -20, antialias: true,
+  // On a touch screen, a one-finger swipe passes through to scroll the page
+  // instead of panning the map — otherwise, once the map fills the visible
+  // screen while scrolling, there's no non-map area left to grab and the
+  // page can feel stuck. Two fingers still pans/zooms the map normally.
+  cooperativeGestures: true,
   style: {
     version: 8,
     sources: {
