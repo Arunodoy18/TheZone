@@ -18,6 +18,11 @@
   html,body{margin:0;height:100%}
   body{background:var(--ink);color:var(--bone);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
     display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  /* 100vh on mobile includes the area behind the browser's collapsing address
+     bar, so with overflow:hidden the bottom of the page gets clipped with no
+     way to scroll to it. 100dvh is the real visible viewport; browsers that
+     don't understand it (rare now) just keep the 100vh line above. */
+  @supports (height: 100dvh) { body{height:100dvh} }
 
   header{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--ink-line);flex:none}
   .mark{font:700 20px/1 var(--sans);letter-spacing:.12em}
@@ -38,7 +43,16 @@
   .note b{color:var(--bone)}
 
   main{flex:1;display:grid;grid-template-columns:1fr 320px;min-height:0}
-  @media (max-width:820px){ main{grid-template-columns:1fr} aside{display:none} }
+  @media (max-width:820px){
+    /* Stack instead of hide: the legend, layer toggles and live-data
+       instructions matter just as much on a phone. Let the whole page
+       scroll (safer than fighting mobile viewport-height quirks) with the
+       map given a fixed, generous height up top. */
+    body{height:auto;overflow:auto}
+    main{grid-template-columns:1fr;grid-template-rows:65vh auto;overflow:visible}
+    #map{height:65vh;min-height:320px}
+    aside{border-left:none;border-top:1px solid var(--ink-line);overflow-y:visible;max-height:none}
+  }
 
   #map{width:100%;height:100%;background:#0b1116}
   .maplibregl-ctrl-attrib{font-size:10px}
