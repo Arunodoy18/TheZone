@@ -116,6 +116,9 @@
     <div class="layer"><input type="checkbox" id="ly-eonet" checked><i class="sw" style="background:#ef5b32"></i>
       <span class="lbl">Active hazards</span><span class="cnt" id="cnt-eonet">–</span></div>
     <div class="src">NASA EONET — open wildfires, storms, volcanoes, floods. Public API, no key.</div>
+    <div class="layer"><input type="checkbox" id="ly-gdacs" checked><i class="sw" style="background:#c77a16"></i>
+      <span class="lbl">GDACS alerts</span><span class="cnt" id="cnt-gdacs">–</span></div>
+    <div class="src">Global Disaster Alert &amp; Coordination System — EU Joint Research Centre / UN. Severity-scored earthquakes, cyclones, floods, volcanoes worldwide. Public API, no key.</div>
 
     <div class="sec-h">Reading this map</div>
     <div class="src">
@@ -309,6 +312,36 @@ fetch("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=150")
   .catch(() => { $("cnt-eonet").textContent = "offline"; });
 $("ly-eonet").addEventListener("change", e => {
   eonetMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
+});
+
+/* ---------------- GDACS — EU JRC / UN disaster alerts (open, no key) ---------------- */
+const gdacsMarkers = [];
+const GDACS_COLOR = {Green:"#3fa7a0", Orange:"#c77a16", Red:"#ef5b32"};
+fetch("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH")
+  .then(r => r.json())
+  .then(d => {
+    const features = d.features || [];
+    $("cnt-gdacs").textContent = features.length;
+    for(const f of features){
+      const geo = f.geometry;
+      if(!geo || geo.type !== "Point") continue;
+      const [lon,lat] = geo.coordinates;
+      const p = f.properties || {};
+      const level = p.alertlevel || "Green";
+      const color = GDACS_COLOR[level] || GDACS_COLOR.Green;
+      const el = document.createElement("div");
+      el.style.cssText = `width:15px;height:15px;border-radius:3px;background:${color};
+        border:2px solid #070a0d;cursor:pointer;transform:rotate(45deg)`;
+      el.addEventListener("mousemove", e => showTip(e, String(p.name || p.eventtype || "GDACS event"),
+        [`${level} alert · ${String(p.eventtype||"")}`, String(p.description||"")]));
+      el.addEventListener("mouseleave", hideTip);
+      const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
+      gdacsMarkers.push(mk);
+    }
+  })
+  .catch(() => { $("cnt-gdacs").textContent = "offline"; });
+$("ly-gdacs").addEventListener("change", e => {
+  gdacsMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
 });
 
 /* demo snapshot so the map isn't empty on first open, same as viewer.html */
