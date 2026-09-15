@@ -150,8 +150,21 @@ map.addControl(new maplibregl.NavigationControl({visualizePitch:true}), "top-rig
 map.addControl(new maplibregl.AttributionControl({compact:true}));
 
 const tip = $("popup-tip");
-function showTip(e, html){
-  tip.innerHTML = html; tip.style.display = "block";
+/* title/lines are always set via textContent below, never innerHTML — the
+ * quake/EONET feeds are open, third-party APIs and their text fields (place
+ * names, event titles) must never be treated as trusted markup. */
+function showTip(e, title, lines, titleColor){
+  tip.textContent = "";
+  const t = document.createElement("div");
+  t.className = "t"; t.textContent = title;
+  if(titleColor) t.style.color = titleColor;
+  tip.appendChild(t);
+  (lines||[]).forEach(line => {
+    const k = document.createElement("div");
+    k.className = "k"; k.textContent = line;
+    tip.appendChild(k);
+  });
+  tip.style.display = "block";
   tip.style.left = (e.point.x + 14) + "px"; tip.style.top = (e.point.y + 10) + "px";
 }
 function hideTip(){ tip.style.display = "none"; }
@@ -183,8 +196,8 @@ function ingestZone(data){
     const el = document.createElement("div");
     el.style.cssText = `width:${18+c.n*4}px;height:${18+c.n*4}px;border-radius:50%;
       background:${sevColor(avg)};opacity:.85;border:2px solid rgba(237,232,218,.6);cursor:pointer`;
-    el.addEventListener("mousemove", e => showTip(e, `<div class="t">Cell (${c.lat},${c.lon})</div>
-      <div class="k">${c.n} report${c.n===1?"":"s"} · avg severity ${(avg*15).toFixed(1)}/15</div>`));
+    el.addEventListener("mousemove", e => showTip(e, `Cell (${c.lat},${c.lon})`,
+      [`${c.n} report${c.n===1?"":"s"} · avg severity ${(avg*15).toFixed(1)}/15`]));
     el.addEventListener("mouseleave", hideTip);
     zoneMarkers.push(new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map));
   }
@@ -193,8 +206,8 @@ function ingestZone(data){
     const el = document.createElement("div");
     el.style.cssText = `width:30px;height:30px;border-radius:50%;background:#070a0d;
       border:3px solid #ef5b32;box-shadow:0 0 0 4px rgba(239,91,50,.25);cursor:pointer`;
-    el.addEventListener("mousemove", e => showTip(e, `<div class="t" style="color:#ef5b32">CELL_LOSS</div>
-      <div class="k">${l.deviceCount} device(s) went silent together</div>`));
+    el.addEventListener("mousemove", e => showTip(e, "CELL_LOSS",
+      [`${l.deviceCount} device(s) went silent together`], "#ef5b32"));
     el.addEventListener("mouseleave", hideTip);
     zoneMarkers.push(new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map));
   }
@@ -240,8 +253,8 @@ fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojso
       const size = Math.max(8, mag*5);
       el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:rgba(242,169,59,.35);
         border:2px solid #f2a93b;cursor:pointer`;
-      el.addEventListener("mousemove", e => showTip(e, `<div class="t">M${mag.toFixed(1)} earthquake</div>
-        <div class="k">${f.properties.place||""}<br>${new Date(f.properties.time).toLocaleString()}</div>`));
+      el.addEventListener("mousemove", e => showTip(e, `M${mag.toFixed(1)} earthquake`,
+        [String(f.properties.place||""), new Date(f.properties.time).toLocaleString()]));
       el.addEventListener("mouseleave", hideTip);
       const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
       quakeMarkers.push(mk);
@@ -267,7 +280,7 @@ fetch("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=150")
       const el = document.createElement("div");
       el.style.cssText = `width:14px;height:14px;border-radius:3px;background:#ef5b32;
         border:2px solid #070a0d;cursor:pointer;transform:rotate(45deg)`;
-      el.addEventListener("mousemove", e => showTip(e, `<div class="t">${cat}</div><div class="k">${ev.title}</div>`));
+      el.addEventListener("mousemove", e => showTip(e, String(cat), [String(ev.title||"")]));
       el.addEventListener("mouseleave", hideTip);
       const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
       eonetMarkers.push(mk);
