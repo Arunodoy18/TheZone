@@ -1,0 +1,12 @@
+{
+  "outputDirectory": "pwa",
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/zone.apk",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" }
+      ]
+    }
+  ]
+}
