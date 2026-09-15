@@ -19,3 +19,5 @@
 keystore.properties
 *.jks
 *.keystore
+.vercel
+.env*
