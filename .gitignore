@@ -11,3 +11,11 @@
 
 # local APK exports (pwa/zone.apk is the tracked one)
 /dist/
+
+# release signing — NEVER commit these to a public repo. Back this keystore
+# up somewhere safe outside git; losing it means losing the ability to ship
+# updates under the same app identity (Play Store ties updates to it).
+/keystore/
+keystore.properties
+*.jks
+*.keystore
