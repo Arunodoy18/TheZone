@@ -35,6 +35,11 @@
          runtime from EmergencyContactsScreen — never assumed granted. -->
     <uses-permission android:name="android.permission.SEND_SMS" />
 
+    <!-- CapFeedFetcher: opt-in, off by default, needs a user-typed URL and a
+         provisioned responder key before it ever fetches anything. The one
+         deliberately isolated network-touching path in the app besides SMS. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- lets "Keep Zone alive" ask directly for the Doze exemption a background
          BLE advertiser needs; the screen falls back to the settings list if absent -->
     <uses-permission

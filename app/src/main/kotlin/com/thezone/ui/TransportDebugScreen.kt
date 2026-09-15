@@ -206,6 +206,33 @@ fun TransportDebugScreen() {
         }
         capMsg?.let { KeyVal("last", it) }
 
+        Header("CAP auto-pull (opportunistic)")
+        Text(
+            "For a responder phone that catches a flicker of signal — walks to the edge of the " +
+                "blackout, or the tower briefly comes back. Fetches whatever CAP feed is configured " +
+                "here and carries it into the mesh automatically. Off by default; needs a URL and " +
+                "this phone's own responder key (below) — no key, no broadcast, ever.",
+            fontSize = 12.sp,
+        )
+        var capFeedUrl by remember { mutableStateOf(com.thezone.config.CapFeedConfig.feedUrl(context)) }
+        var capFeedOn by remember { mutableStateOf(com.thezone.config.CapFeedConfig.enabled(context)) }
+        androidx.compose.material3.OutlinedTextField(
+            value = capFeedUrl,
+            onValueChange = { capFeedUrl = it },
+            singleLine = true,
+            label = { Text("feed URL") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { com.thezone.config.CapFeedConfig.setFeedUrl(context, capFeedUrl) }) { Text("Save URL") }
+            FilterChip(
+                selected = capFeedOn,
+                onClick = { capFeedOn = !capFeedOn; com.thezone.config.CapFeedConfig.setEnabled(context, capFeedOn) },
+                label = { Text(if (capFeedOn) "auto-pull: on" else "auto-pull: off") },
+            )
+        }
+        KeyVal("last attempt", com.thezone.notify.CapFeedFetcher.lastResult)
+
         Header("Live EOC")
         var autoEoc by remember { mutableStateOf(TransportController.eocAutoExport) }
         FilterChip(

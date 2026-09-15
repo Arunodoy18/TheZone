@@ -757,6 +757,9 @@ object TransportController {
             // Opt-in, rate-limited internally — a no-op unless the user turned
             // it on and typed numbers in (docs/PRD.md, CLAUDE.md rule 4).
             com.thezone.notify.StatusTexter.maybeAttempt(ctx)
+            // Opt-in, rate-limited, gated behind the same provisioned-key
+            // trust boundary as every other ALERT-issuing path.
+            com.thezone.notify.CapFeedFetcher.maybeAttempt(ctx)
         } catch (e: Throwable) {
             diagnosticsError("relay pump: ${e.message}")
         }
