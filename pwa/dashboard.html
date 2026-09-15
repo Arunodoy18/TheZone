@@ -1,0 +1,293 @@
+<title>Zone EOC Dashboard</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  /* Same visual world as viewer.html (dark EOC console), extended with a map. */
+  :root{
+    color-scheme: dark;
+    --ink:#070a0d; --ink-soft:#10161c; --ink-raise:#161e26; --ink-line:#223038;
+    --bone:#ede8da; --bone-dim:#7c8792; --bone-faint:#49555f;
+    --signal:#1be7c4;
+    --calm:#1f6e7b; --shoal:#3fa7a0; --amber:#f2a93b; --alarm:#ef5b32; --alarm-deep:#b5311b;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--ink);color:var(--bone);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+  header{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--ink-line);flex:none}
+  .mark{font:700 20px/1 var(--sans);letter-spacing:.12em}
+  .mark b{color:var(--signal)}
+  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.2em;color:var(--bone-dim);text-transform:uppercase;padding-bottom:3px}
+  .online-badge{
+    margin-left:auto;display:flex;align-items:center;gap:7px;
+    font:700 11px/1 var(--mono);letter-spacing:.1em;color:var(--amber);
+    border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);
+    border-radius:20px;padding:6px 12px;background:color-mix(in srgb,var(--amber) 10%,transparent);
+  }
+  .online-badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--amber)}
+
+  .note{
+    flex:none;padding:9px 20px;font:500 12.5px/1.5 var(--sans);color:var(--bone-dim);
+    background:var(--ink-soft);border-bottom:1px solid var(--ink-line);
+  }
+  .note b{color:var(--bone)}
+
+  main{flex:1;display:grid;grid-template-columns:1fr 320px;min-height:0}
+  @media (max-width:820px){ main{grid-template-columns:1fr} aside{display:none} }
+
+  #map{width:100%;height:100%;background:#0b1116}
+  .maplibregl-ctrl-attrib{font-size:10px}
+
+  aside{background:var(--ink-soft);border-left:1px solid var(--ink-line);overflow-y:auto;padding:16px}
+  .sec-h{font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--bone-dim);
+    padding:14px 2px 8px;border-top:1px solid var(--ink-line);margin-top:6px}
+  .sec-h:first-child{border-top:none;margin-top:0;padding-top:2px}
+
+  .layer{display:flex;align-items:center;gap:9px;padding:7px 2px;cursor:pointer;user-select:none}
+  .layer input{accent-color:var(--signal);width:15px;height:15px}
+  .layer .sw{width:11px;height:11px;border-radius:50%;flex:none}
+  .layer .lbl{font:600 13px/1.3 var(--sans);flex:1}
+  .layer .cnt{font:500 11px/1 var(--mono);color:var(--bone-dim)}
+
+  .stat{display:flex;justify-content:space-between;font:500 12px/1.6 var(--mono);color:var(--bone-dim)}
+  .stat b{color:var(--bone);font-weight:600}
+
+  .src{font:500 11.5px/1.5 var(--sans);color:var(--bone-faint);padding:2px 2px 10px}
+  .src a{color:var(--bone-dim)}
+
+  #popup-tip{
+    position:absolute;pointer-events:none;z-index:5;
+    background:var(--ink-raise);border:1px solid var(--ink-line);border-radius:8px;
+    padding:8px 11px;font:500 12px/1.4 var(--sans);color:var(--bone);max-width:240px;
+    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;
+  }
+  #popup-tip .t{font:700 12.5px/1.3 var(--sans);margin-bottom:2px}
+  #popup-tip .k{color:var(--bone-dim);font:500 11px/1.4 var(--mono)}
+</style>
+
+<header>
+  <div>
+    <div class="eyebrow">Emergency Operations · Command Centre</div>
+    <div class="mark"><b>ZONE</b> EOC DASHBOARD</div>
+  </div>
+  <div class="online-badge">requires internet</div>
+</header>
+
+<div class="note">
+  <b>This page is the online half of Zone — it is not the phone app.</b> The Citizen/Responder/Map app on the phone
+  needs no network, ever, and keeps working exactly the same whether or not this page exists. This dashboard is for
+  a control room, an NGO desk, or the edge of the blackout zone — wherever a connection already exists — to see
+  Zone's own mesh picture laid over open, free hazard data.
+</div>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <div class="sec-h">Zone mesh</div>
+    <div class="layer"><input type="checkbox" id="ly-zone" checked><i class="sw" style="background:var(--signal)"></i>
+      <span class="lbl">Reports &amp; cell loss</span><span class="cnt" id="cnt-zone">0</span></div>
+    <div class="stat"><span>snapshot</span><b id="zone-gen">none loaded</b></div>
+    <div class="src">Drop a <code>thezone-eoc.json</code> anywhere on the map, or open with <code>?live=eoc.json</code> to poll a live export — same file the offline viewer reads.</div>
+
+    <div class="sec-h">Open hazard feeds</div>
+    <div class="layer"><input type="checkbox" id="ly-quake" checked><i class="sw" style="background:#f2a93b"></i>
+      <span class="lbl">Earthquakes (7d)</span><span class="cnt" id="cnt-quake">–</span></div>
+    <div class="src">USGS Earthquake Hazards Program, public GeoJSON feed, no key.</div>
+    <div class="layer"><input type="checkbox" id="ly-eonet" checked><i class="sw" style="background:#ef5b32"></i>
+      <span class="lbl">Active hazards</span><span class="cnt" id="cnt-eonet">–</span></div>
+    <div class="src">NASA EONET — open wildfires, storms, volcanoes, floods. Public API, no key.</div>
+
+    <div class="sec-h">Reading this map</div>
+    <div class="src">
+      Zone markers are the mesh's own picture, carried out of the blackout by a responder or a phone that regained
+      signal — not live-tracked positions. A dark ring marks a cell that went fully silent. Everything else on this
+      page is public open data, shown only for context; it is never sent into the mesh or the phone app.
+    </div>
+  </aside>
+</main>
+<div id="popup-tip"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ORIGIN_LAT = 28.2814, ORIGIN_LON = 85.3779;   // docs/PACKET_SPEC.md default incident origin
+const CELL_UNIT = 90;                                // grid cell = floorDiv(delta, 90); ~100 m/cell
+const DEG_PER_UNIT = 1e-5;                            // PACKET_SPEC position encoding
+
+function cellToLatLon(lat, lon, originLat=ORIGIN_LAT, originLon=ORIGIN_LON){
+  return [
+    originLon + (lon*CELL_UNIT + CELL_UNIT/2) * DEG_PER_UNIT,   // maplibre wants [lon,lat]
+    originLat + (lat*CELL_UNIT + CELL_UNIT/2) * DEG_PER_UNIT,
+  ];
+}
+
+const map = new maplibregl.Map({
+  container: "map",
+  center: [ORIGIN_LON, ORIGIN_LAT],
+  zoom: 11, pitch: 55, bearing: -20, antialias: true,
+  style: {
+    version: 8,
+    sources: {
+      sat: {
+        type: "raster", tileSize: 256,
+        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+        attribution: "Esri World Imagery",
+      },
+      terrain: {
+        type: "raster-dem", tileSize: 256, encoding: "terrarium",
+        tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+      },
+    },
+    layers: [{ id: "sat", type: "raster", source: "sat" }],
+    terrain: { source: "terrain", exaggeration: 1.4 },
+  },
+});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:true}), "top-right");
+map.addControl(new maplibregl.AttributionControl({compact:true}));
+
+const tip = $("popup-tip");
+function showTip(e, html){
+  tip.innerHTML = html; tip.style.display = "block";
+  tip.style.left = (e.point.x + 14) + "px"; tip.style.top = (e.point.y + 10) + "px";
+}
+function hideTip(){ tip.style.display = "none"; }
+map.getCanvasContainer().addEventListener("mousemove", () => {});
+
+/* ---------------- Zone mesh layer ---------------- */
+const zoneMarkers = [];
+function clearZone(){ zoneMarkers.forEach(m => m.remove()); zoneMarkers.length = 0; }
+
+function sevColor(t){
+  const L=(a,b,k)=>a.map((v,i)=>Math.round(v+(b[i]-v)*k));
+  const calm=[31,110,123],shoal=[63,167,160],amber=[242,169,59],alarm=[239,91,50];
+  const c = t<.34?L(calm,shoal,t/.34):t<.67?L(shoal,amber,(t-.34)/.33):L(amber,alarm,(t-.67)/.33);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function ingestZone(data){
+  clearZone();
+  const reports = data.reports||[], losses = data.cellLosses||[];
+  const cells = new Map();
+  for(const r of reports){
+    const k = r.cell.lat+","+r.cell.lon;
+    const c = cells.get(k) || {lat:r.cell.lat,lon:r.cell.lon,n:0,sevSum:0};
+    c.n++; c.sevSum += r.severity; cells.set(k,c);
+  }
+  for(const c of cells.values()){
+    const [lon,lat] = cellToLatLon(c.lat,c.lon);
+    const avg = (c.sevSum/c.n)/15;
+    const el = document.createElement("div");
+    el.style.cssText = `width:${18+c.n*4}px;height:${18+c.n*4}px;border-radius:50%;
+      background:${sevColor(avg)};opacity:.85;border:2px solid rgba(237,232,218,.6);cursor:pointer`;
+    el.addEventListener("mousemove", e => showTip(e, `<div class="t">Cell (${c.lat},${c.lon})</div>
+      <div class="k">${c.n} report${c.n===1?"":"s"} · avg severity ${(avg*15).toFixed(1)}/15</div>`));
+    el.addEventListener("mouseleave", hideTip);
+    zoneMarkers.push(new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map));
+  }
+  for(const l of losses){
+    const [lon,lat] = cellToLatLon(l.cell.lat,l.cell.lon);
+    const el = document.createElement("div");
+    el.style.cssText = `width:30px;height:30px;border-radius:50%;background:#070a0d;
+      border:3px solid #ef5b32;box-shadow:0 0 0 4px rgba(239,91,50,.25);cursor:pointer`;
+    el.addEventListener("mousemove", e => showTip(e, `<div class="t" style="color:#ef5b32">CELL_LOSS</div>
+      <div class="k">${l.deviceCount} device(s) went silent together</div>`));
+    el.addEventListener("mouseleave", hideTip);
+    zoneMarkers.push(new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map));
+  }
+  $("cnt-zone").textContent = cells.size + losses.length;
+  $("zone-gen").textContent = new Date(data.generatedAt).toLocaleTimeString();
+}
+
+/* file drop, same convention as viewer.html */
+["dragenter","dragover"].forEach(ev => document.addEventListener(ev, e => e.preventDefault()));
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if(f) f.text().then(t => { try{ ingestZone(JSON.parse(t)); }catch(err){} });
+});
+(function(){
+  const src = new URLSearchParams(location.search).get("live");
+  if(!src) return;
+  let lastGen = 0;
+  async function tick(){
+    try{
+      const r = await fetch(src + "?_=" + Date.now(), {cache:"no-store"});
+      const data = await r.json();
+      if(data.generatedAt !== lastGen){ lastGen = data.generatedAt; ingestZone(data); }
+    }catch(e){}
+  }
+  tick(); setInterval(tick, 4000);
+})();
+
+$("ly-zone").addEventListener("change", e => {
+  zoneMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
+});
+
+/* ---------------- USGS earthquakes (open, no key) ---------------- */
+const quakeMarkers = [];
+fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson")
+  .then(r => r.json())
+  .then(fc => {
+    $("cnt-quake").textContent = fc.features.length;
+    for(const f of fc.features){
+      const [lon,lat] = f.geometry.coordinates;
+      const mag = f.properties.mag || 0;
+      const el = document.createElement("div");
+      const size = Math.max(8, mag*5);
+      el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:rgba(242,169,59,.35);
+        border:2px solid #f2a93b;cursor:pointer`;
+      el.addEventListener("mousemove", e => showTip(e, `<div class="t">M${mag.toFixed(1)} earthquake</div>
+        <div class="k">${f.properties.place||""}<br>${new Date(f.properties.time).toLocaleString()}</div>`));
+      el.addEventListener("mouseleave", hideTip);
+      const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
+      quakeMarkers.push(mk);
+    }
+  })
+  .catch(() => { $("cnt-quake").textContent = "offline"; });
+$("ly-quake").addEventListener("change", e => {
+  quakeMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
+});
+
+/* ---------------- NASA EONET open hazard events (open, no key) ---------------- */
+const eonetMarkers = [];
+fetch("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=150")
+  .then(r => r.json())
+  .then(d => {
+    const events = d.events || [];
+    $("cnt-eonet").textContent = events.length;
+    for(const ev of events){
+      const geo = ev.geometry && ev.geometry[ev.geometry.length-1];
+      if(!geo || geo.type !== "Point") continue;
+      const [lon,lat] = geo.coordinates;
+      const cat = (ev.categories && ev.categories[0] && ev.categories[0].title) || "Event";
+      const el = document.createElement("div");
+      el.style.cssText = `width:14px;height:14px;border-radius:3px;background:#ef5b32;
+        border:2px solid #070a0d;cursor:pointer;transform:rotate(45deg)`;
+      el.addEventListener("mousemove", e => showTip(e, `<div class="t">${cat}</div><div class="k">${ev.title}</div>`));
+      el.addEventListener("mouseleave", hideTip);
+      const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
+      eonetMarkers.push(mk);
+    }
+  })
+  .catch(() => { $("cnt-eonet").textContent = "offline"; });
+$("ly-eonet").addEventListener("change", e => {
+  eonetMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
+});
+
+/* demo snapshot so the map isn't empty on first open, same as viewer.html */
+if(!new URLSearchParams(location.search).get("live")){
+  ingestZone({
+    generatedAt: Date.now(),
+    reports:[
+      {cell:{lat:2,lon:-1},severity:11},{cell:{lat:2,lon:-1},severity:9},
+      {cell:{lat:2,lon:-1},severity:10},{cell:{lat:3,lon:2},severity:7},
+      {cell:{lat:5,lon:5},severity:3},
+    ],
+    cellLosses:[{cell:{lat:-1,lon:1},deviceCount:12}],
+  });
+}
+</script>
