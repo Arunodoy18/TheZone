@@ -119,6 +119,9 @@
     <div class="layer"><input type="checkbox" id="ly-gdacs" checked><i class="sw" style="background:#c77a16"></i>
       <span class="lbl">GDACS alerts</span><span class="cnt" id="cnt-gdacs">–</span></div>
     <div class="src">Global Disaster Alert &amp; Coordination System — EU Joint Research Centre / UN. Severity-scored earthquakes, cyclones, floods, volcanoes worldwide. Public API, no key.</div>
+    <div class="layer"><input type="checkbox" id="ly-firms" checked><i class="sw" style="background:#ef5b32"></i>
+      <span class="lbl">Active fires (South Asia)</span><span class="cnt" id="cnt-firms">–</span></div>
+    <div class="src">NASA FIRMS — satellite-detected fire hotspots, last 24h, scoped to South Asia. Served through Zone's own proxy so the API key never reaches the browser.</div>
 
     <div class="sec-h">Reading this map</div>
     <div class="src">
@@ -342,6 +345,32 @@ fetch("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH")
   .catch(() => { $("cnt-gdacs").textContent = "offline"; });
 $("ly-gdacs").addEventListener("change", e => {
   gdacsMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
+});
+
+/* ---------------- NASA FIRMS active fires, via Zone's own proxy ---------------- */
+/* /api/firms holds the personal MAP_KEY server-side (Vercel env var) — never
+ * shipped to the browser. See api/firms.js. */
+const firmsMarkers = [];
+fetch("/api/firms")
+  .then(r => r.json())
+  .then(d => {
+    const points = d.points || [];
+    $("cnt-firms").textContent = points.length;
+    for(const p of points){
+      const el = document.createElement("div");
+      const size = p.frp ? Math.max(8, Math.min(20, 8 + p.frp)) : 10;
+      el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:rgba(239,91,50,.45);
+        border:2px solid #ef5b32;cursor:pointer`;
+      el.addEventListener("mousemove", e => showTip(e, "Active fire (VIIRS)",
+        [`confidence ${p.confidence||"?"} · FRP ${p.frp!=null?p.frp.toFixed(1):"?"} MW`, `${p.acqDate||""} ${p.acqTime||""} UTC`]));
+      el.addEventListener("mouseleave", hideTip);
+      const mk = new maplibregl.Marker({element:el}).setLngLat([p.lon,p.lat]).addTo(map);
+      firmsMarkers.push(mk);
+    }
+  })
+  .catch(() => { $("cnt-firms").textContent = "offline"; });
+$("ly-firms").addEventListener("change", e => {
+  firmsMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
 });
 
 /* demo snapshot so the map isn't empty on first open, same as viewer.html */
