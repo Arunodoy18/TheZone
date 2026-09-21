@@ -1,388 +1,816 @@
-<title>Zone EOC Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zone — Situational Awareness</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#03060a">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <style>
-  /* Same visual world as viewer.html (dark EOC console), extended with a map. */
   :root{
     color-scheme: dark;
-    --ink:#070a0d; --ink-soft:#10161c; --ink-raise:#161e26; --ink-line:#223038;
-    --bone:#ede8da; --bone-dim:#7c8792; --bone-faint:#49555f;
-    --signal:#1be7c4;
-    --calm:#1f6e7b; --shoal:#3fa7a0; --amber:#f2a93b; --alarm:#ef5b32; --alarm-deep:#b5311b;
+    --ink:#03060a; --panel:rgba(8,13,18,.84); --panel-solid:#0a1016; --line:#1d2b34; --line-hi:#2c4350;
+    --bone:#e9e4d6; --dim:#8c98a2; --faint:#55626c;
+    --signal:#1be7c4; --amber:#f2a93b; --alarm:#ef5b32; --green:#4ade80;
     --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{background:var(--ink);color:var(--bone);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
-    display:flex;flex-direction:column;height:100vh;overflow:hidden}
-  /* 100vh on mobile includes the area behind the browser's collapsing address
-     bar, so with overflow:hidden the bottom of the page gets clipped with no
-     way to scroll to it. 100dvh is the real visible viewport; browsers that
-     don't understand it (rare now) just keep the 100vh line above. */
-  @supports (height: 100dvh) { body{height:100dvh} }
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--bone);font:13px/1.45 var(--sans);
+    overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+  button{font:inherit;color:inherit;cursor:pointer}
+  a{color:inherit}
+  #map{position:fixed;inset:0;background:#05090d}
+  .maplibregl-canvas{outline:none}
 
-  header{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--ink-line);flex:none}
-  .mark{font:700 20px/1 var(--sans);letter-spacing:.12em}
-  .mark b{color:var(--signal)}
-  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.2em;color:var(--bone-dim);text-transform:uppercase;padding-bottom:3px}
-  .online-badge{
-    margin-left:auto;display:flex;align-items:center;gap:7px;
-    font:700 11px/1 var(--mono);letter-spacing:.1em;color:var(--amber);
-    border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);
-    border-radius:20px;padding:6px 12px;background:color-mix(in srgb,var(--amber) 10%,transparent);
+  /* ---------- HUD primitives ---------- */
+  .hud{position:fixed;z-index:6}
+  .mono{font-family:var(--mono)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:16px;
+    background:var(--panel);border:1px solid var(--line-hi);font:600 11px/1 var(--mono);letter-spacing:.1em;
+    text-transform:uppercase;text-decoration:none;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .btn:hover,.btn:focus-visible{border-color:var(--signal);outline:none}
+  .btn.pri{color:#03060a;background:var(--signal);border-color:var(--signal)}
+  .btn svg{width:14px;height:14px}
+  svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ---------- brand + status ---------- */
+  .brand{top:12px;left:62px;display:flex;gap:12px;align-items:center;pointer-events:none}
+  .brand svg{width:40px;height:40px;flex:none}
+  .brand .word{font:700 21px/1 var(--mono);letter-spacing:.34em}
+  .brand .word b{color:var(--signal);font-weight:700}
+  .brand .sub{font:500 10px/1.3 var(--mono);letter-spacing:.24em;color:var(--dim);margin-top:5px;text-transform:uppercase}
+  .brand .fine{font:400 9.5px/1.3 var(--mono);letter-spacing:.2em;color:var(--faint);margin-top:6px;text-transform:uppercase;white-space:nowrap}
+  .status{top:14px;right:16px;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+  .stat-line{font:500 11px/1 var(--mono);letter-spacing:.14em;color:var(--faint);text-transform:uppercase;
+    display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;
+    text-shadow:0 1px 6px #000}
+  .stat-line b{font-weight:600}
+  .stat-line .z{color:var(--signal)} .stat-line .live{color:var(--green)} .stat-line .warn{color:var(--amber)}
+  .stat-line .n{color:var(--bone)}
+  .actions{display:flex;gap:8px}
+
+  /* ---------- left rail ---------- */
+  .rail{top:96px;left:10px;display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:14px}
+  .rbtn{position:relative;width:38px;height:38px;border-radius:10px;border:1px solid transparent;background:transparent;
+    display:grid;place-items:center;color:var(--dim)}
+  .rbtn:hover,.rbtn:focus-visible{border-color:var(--line-hi);color:var(--bone);outline:none}
+  .rbtn.on{color:var(--c,var(--signal))}
+  .rbtn:not(.on) svg{opacity:.45}
+  .rbtn .bd{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;
+    background:#38bdf8;color:#03141c;font:700 9.5px/17px var(--mono);text-align:center;display:none}
+  .rbtn.on .bd.has{display:block}
+  .rsep{height:1px;background:var(--line);margin:2px 6px}
+
+  /* ---------- layers panel ---------- */
+  .layers{top:96px;left:64px;width:350px;max-height:calc(100dvh - 190px);overflow:auto;padding:14px;display:none}
+  .layers.open{display:block}
+  .layers h3,.about h3{margin:0 0 4px;font:700 11px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--signal)}
+  .layers .lead{color:var(--dim);font-size:12px;margin:0 0 10px}
+  .lrow{display:grid;grid-template-columns:22px 1fr auto;gap:2px 10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+  .lrow:first-of-type{border-top:0}
+  .lrow input{width:16px;height:16px;accent-color:var(--signal);margin:0}
+  .lrow .nm{font:600 12.5px/1.2 var(--sans)}
+  .lrow .ct{font:600 11px/1 var(--mono);color:var(--dim)}
+  .lrow .sb{grid-column:2 / 4;color:var(--dim);font-size:11.5px;line-height:1.4}
+  .lrow .go{grid-column:2 / 4;justify-self:start;margin-top:4px;background:none;border:1px solid var(--line-hi);border-radius:12px;
+    color:var(--dim);padding:3px 10px;font:600 10px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase}
+  .lrow .go:hover{border-color:var(--signal);color:var(--bone)}
+
+  /* ---------- modes + readout ---------- */
+  .modes{left:62px;bottom:72px;display:flex;gap:8px;align-items:center;padding:6px;border-radius:14px}
+  .seg{display:flex;gap:4px}
+  .seg button{height:32px;padding:0 12px;border-radius:9px;border:1px solid transparent;background:transparent;
+    font:600 11px/1 var(--mono);letter-spacing:.14em;color:var(--dim);display:inline-flex;align-items:center;gap:7px}
+  .seg button svg{width:15px;height:15px}
+  .seg button.on{border-color:var(--signal);color:var(--signal);background:rgba(27,231,196,.08)}
+  .seg button:hover{color:var(--bone)}
+  .msep{width:1px;height:22px;background:var(--line-hi)}
+  .readout{left:16px;bottom:38px;font:500 10.5px/1 var(--mono);letter-spacing:.12em;color:var(--faint);text-transform:uppercase;
+    display:flex;gap:18px;flex-wrap:wrap;text-shadow:0 1px 6px #000;max-width:calc(100vw - 260px)}
+  .readout b{color:#7dd3c8;font-weight:500}
+  .readout .loc{color:#5ea6d6}
+  .maplibregl-ctrl-bottom-left{left:62px;bottom:118px}
+  .maplibregl-ctrl-scale{background:rgba(3,6,10,.6);color:var(--dim);border-color:var(--dim);font:500 10px var(--mono)}
+  .maplibregl-ctrl-bottom-right{bottom:32px}
+  .maplibregl-ctrl-attrib{background:rgba(3,6,10,.7)!important;color:var(--faint)!important;font-size:10px}
+  .maplibregl-ctrl-attrib a{color:var(--dim)!important}
+
+  /* ---------- zoom pad ---------- */
+  .pad{right:16px;bottom:88px;display:grid;grid-template-columns:repeat(3,36px);grid-auto-rows:36px;gap:4px;padding:8px;border-radius:14px}
+  .pad button{border:1px solid transparent;border-radius:9px;background:transparent;color:var(--dim);display:grid;place-items:center}
+  .pad button:hover{border-color:var(--line-hi);color:var(--bone)}
+  .pad svg{width:16px;height:16px}
+  .hint{right:16px;bottom:38px;font:400 9.5px/1 var(--mono);letter-spacing:.1em;color:var(--faint);text-shadow:0 1px 6px #000;text-transform:none}
+
+  /* ---------- camera viewer ---------- */
+  .cam{top:92px;right:16px;width:min(500px,calc(100vw - 32px));display:none;overflow:hidden}
+  .cam.open{display:block}
+  .cam .top{display:flex;justify-content:space-between;gap:12px;padding:9px 14px;border-bottom:1px solid var(--line);
+    font:600 10.5px/1 var(--mono);letter-spacing:.14em;color:#d1a24a;text-transform:uppercase}
+  .cam .top span:nth-child(2){color:var(--faint);font-weight:400}
+  .cam .top span:last-child{color:var(--green)}
+  .cam .head{display:flex;gap:12px;align-items:center;padding:12px 14px}
+  .cam .head .ic{width:38px;height:38px;border:1px solid #6b5a2a;border-radius:9px;display:grid;place-items:center;color:#d1a24a;flex:none}
+  .cam .head .t{font:700 14px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+  .cam .head .s{font:500 10.5px/1.3 var(--mono);letter-spacing:.06em;color:#b58b3b;margin-top:3px;text-transform:uppercase}
+  .cam .head .tools{margin-left:auto;display:flex;gap:6px}
+  .ibtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--line-hi);background:rgba(255,255,255,.02);display:grid;place-items:center;color:var(--dim)}
+  .ibtn:hover{color:var(--bone);border-color:var(--signal)}
+  .ibtn.x{color:#ff8a70;border-color:#6b2c20;background:rgba(239,91,50,.1)}
+  .ibtn svg{width:16px;height:16px}
+  .cam .media{position:relative;background:#000;aspect-ratio:16/9;display:grid;place-items:center;color:var(--faint);font:500 12px var(--mono)}
+  .cam .media img,.cam .media video{width:100%;height:100%;object-fit:contain;display:block}
+  .cam .live{position:absolute;left:12px;top:12px;padding:6px 9px;border:1px solid #6b5a2a;border-radius:6px;background:rgba(0,0,0,.65);
+    font:600 10.5px/1 var(--mono);letter-spacing:.14em;color:var(--bone);display:flex;gap:7px;align-items:center}
+  .cam .live i{width:7px;height:7px;border-radius:50%;background:#ff4d3d;box-shadow:0 0 8px #ff4d3d;animation:pulse 1.4s infinite}
+  .cam .foot{display:flex;gap:18px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);
+    font:500 10px/1.3 var(--mono);letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+  .cam .foot b{display:block;color:var(--bone);font-weight:500;margin-top:3px;letter-spacing:.06em}
+  .cam .foot .st{color:var(--green)}
+  .cam .foot .acts{margin-left:auto;display:flex;gap:8px}
+  .cam .foot .btn{height:30px;font-size:10px}
+  .cam .attr{padding:0 14px 10px;color:var(--faint);font:400 10px/1.4 var(--mono)}
+  @keyframes pulse{50%{opacity:.35}}
+
+  /* ---------- about ---------- */
+  .about{inset:0;display:none;place-items:center;background:rgba(2,4,7,.66);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);padding:16px}
+  .about.open{display:grid}
+  .about .card{width:min(640px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:22px 24px;border-radius:16px;background:var(--panel-solid);border:1px solid var(--line-hi)}
+  .about h2{margin:6px 0 12px;font:700 20px/1.2 var(--sans);letter-spacing:-.005em}
+  .about p{margin:0 0 12px;color:#c7ccd0;font-size:13.5px;line-height:1.6}
+  .about .two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+  .about .ph{border:1px solid var(--line-hi);border-radius:12px;padding:12px 14px}
+  .about .ph b{display:block;font:700 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--amber);margin-bottom:7px}
+  .about .ph.two-b b{color:var(--signal)}
+  .about .ph p{margin:0;font-size:12.5px;line-height:1.55}
+  .about .row{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 4px}
+  .about .src{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);color:var(--faint);font:400 10.5px/1.6 var(--mono)}
+  .about .close{float:right}
+
+  /* ---------- tooltip ---------- */
+  #tip{position:fixed;z-index:9;pointer-events:none;display:none;max-width:260px;padding:9px 11px;border-radius:9px;
+    background:rgba(8,13,18,.94);border:1px solid var(--line-hi);box-shadow:0 8px 22px rgba(0,0,0,.5)}
+  #tip .t{font:700 12px/1.3 var(--sans)} #tip .k{font:500 11px/1.4 var(--mono);color:var(--dim);margin-top:2px}
+  #tip img{display:block;width:180px;height:101px;object-fit:cover;background:#000;border-radius:6px;margin-bottom:7px}
+
+  /* ---------- ticker ---------- */
+  .ticker{left:0;right:0;bottom:0;height:30px;overflow:hidden;background:rgba(3,6,10,.94);border-top:1px solid var(--line);
+    display:flex;align-items:center;padding-bottom:env(safe-area-inset-bottom)}
+  .ticker .lab{flex:none;padding:0 12px;font:700 10px/1 var(--mono);letter-spacing:.16em;color:var(--signal);border-right:1px solid var(--line);height:100%;display:flex;align-items:center;gap:8px}
+  .ticker .lab i{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+  .ticker .win{flex:1;overflow:hidden;height:100%}
+  .track{display:inline-flex;height:100%;align-items:center;white-space:nowrap;animation:tick var(--dur,90s) linear infinite}
+  .track:hover{animation-play-state:paused}
+  .tk{background:none;border:0;height:100%;padding:0 22px;display:inline-flex;gap:8px;align-items:center;font:500 11px/1 var(--mono);color:var(--dim)}
+  .tk:hover{color:var(--bone)}
+  .tk .d{width:8px;height:8px;border-radius:50%;background:var(--alarm)}
+  .tk .m{color:var(--amber);font-weight:700}
+  .tk em{font-style:normal;color:var(--faint)}
+  @keyframes tick{to{transform:translateX(-50%)}}
+
+  @media (prefers-reduced-motion:reduce){ .track{animation:none} .cam .live i{animation:none} }
+
+  /* ---------- phones ---------- */
+  @media (max-width:760px){
+    .brand{left:54px;top:10px;gap:9px} .brand svg{width:30px;height:30px} .brand .word{font-size:16px;letter-spacing:.28em}
+    .brand .sub{font-size:8.5px;letter-spacing:.16em;margin-top:3px} .brand .fine{display:none}
+    .status{top:10px;right:10px;gap:6px} .stat-line{display:none}
+    .actions .btn{height:28px;padding:0 9px;font-size:10px} .actions .btn.ab{display:none}
+    .rail{top:64px;left:6px;padding:4px;gap:4px} .rbtn{width:34px;height:34px}
+    .layers{left:8px;right:8px;top:60px;width:auto;max-height:calc(100dvh - 130px)}
+    .modes{left:6px;bottom:68px;padding:4px;gap:4px} .seg button{height:30px;padding:0 9px;font-size:10px;letter-spacing:.08em}
+    .seg button svg{display:none}
+    .readout{left:8px;bottom:36px;gap:10px;font-size:9.5px;max-width:calc(100vw - 16px)} .readout .cur{display:none}
+    .pad{right:8px;bottom:64px;grid-template-columns:repeat(2,34px);padding:4px} .pad .pan{display:none} .hint{display:none}
+    .maplibregl-ctrl-bottom-left{left:6px;bottom:108px}
+    .cam{top:auto;bottom:30px;right:0;left:0;width:auto;border-radius:14px 14px 0 0;max-height:78dvh;overflow:auto}
+    .about .two{grid-template-columns:1fr}
   }
-  .online-badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--amber)}
-
-  .note{
-    flex:none;padding:9px 20px;font:500 12.5px/1.5 var(--sans);color:var(--bone-dim);
-    background:var(--ink-soft);border-bottom:1px solid var(--ink-line);
-  }
-  .note b{color:var(--bone)}
-
-  main{flex:1;display:grid;grid-template-columns:1fr 320px;min-height:0}
-  @media (max-width:820px){
-    /* Stack instead of hide: the legend, layer toggles and live-data
-       instructions matter just as much on a phone. Let the whole page
-       scroll (safer than fighting mobile viewport-height quirks) with the
-       map given a fixed, generous height up top. */
-    body{height:auto;overflow:auto}
-    main{grid-template-columns:1fr;grid-template-rows:65vh auto;overflow:visible}
-    #map{height:65vh;min-height:320px}
-    aside{border-left:none;border-top:1px solid var(--ink-line);overflow-y:visible;max-height:none}
-  }
-
-  #map{width:100%;height:100%;background:#0b1116}
-  .maplibregl-ctrl-attrib{font-size:10px}
-
-  aside{background:var(--ink-soft);border-left:1px solid var(--ink-line);overflow-y:auto;padding:16px}
-  .sec-h{font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--bone-dim);
-    padding:14px 2px 8px;border-top:1px solid var(--ink-line);margin-top:6px}
-  .sec-h:first-child{border-top:none;margin-top:0;padding-top:2px}
-
-  .layer{display:flex;align-items:center;gap:9px;padding:7px 2px;cursor:pointer;user-select:none}
-  .layer input{accent-color:var(--signal);width:15px;height:15px}
-  .layer .sw{width:11px;height:11px;border-radius:50%;flex:none}
-  .layer .lbl{font:600 13px/1.3 var(--sans);flex:1}
-  .layer .cnt{font:500 11px/1 var(--mono);color:var(--bone-dim)}
-
-  .stat{display:flex;justify-content:space-between;font:500 12px/1.6 var(--mono);color:var(--bone-dim)}
-  .stat b{color:var(--bone);font-weight:600}
-
-  .src{font:500 11.5px/1.5 var(--sans);color:var(--bone-faint);padding:2px 2px 10px}
-  .src a{color:var(--bone-dim)}
-
-  #popup-tip{
-    position:absolute;pointer-events:none;z-index:5;
-    background:var(--ink-raise);border:1px solid var(--ink-line);border-radius:8px;
-    padding:8px 11px;font:500 12px/1.4 var(--sans);color:var(--bone);max-width:240px;
-    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;
-  }
-  #popup-tip .t{font:700 12.5px/1.3 var(--sans);margin-bottom:2px}
-  #popup-tip .k{color:var(--bone-dim);font:500 11px/1.4 var(--mono)}
 </style>
+</head>
+<body>
+<div id="map"></div>
 
-<header>
+<div class="hud brand" aria-label="Zone">
+  <svg viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke="#1be7c4" stroke-width="1.4">
+    <circle cx="20" cy="20" r="17" opacity=".35"/><circle cx="20" cy="20" r="11" opacity=".6"/><circle cx="20" cy="20" r="5"/>
+    <path d="M20 20 34 9" stroke-linecap="round"/></g><circle cx="20" cy="20" r="2.2" fill="#1be7c4"/></svg>
   <div>
-    <div class="eyebrow">Emergency Operations · Command Centre</div>
-    <div class="mark"><b>ZONE</b> EOC DASHBOARD</div>
+    <div class="word"><b>Z</b>ONE</div>
+    <div class="sub">Situational awareness · Phase 1 · Online</div>
+    <div class="fine">Earthquakes · Fires · Hazards · Disaster alerts · Public cameras</div>
   </div>
-  <div class="online-badge">requires internet</div>
-</header>
-
-<div class="note">
-  <b>This page is the online half of Zone — it is not the phone app.</b> The Citizen/Responder/Map app on the phone
-  needs no network, ever, and keeps working exactly the same whether or not this page exists. This dashboard is for
-  a control room, an NGO desk, or the edge of the blackout zone — wherever a connection already exists — to see
-  Zone's own mesh picture laid over open, free hazard data.
 </div>
 
-<main>
-  <div id="map"></div>
-  <aside>
-    <div class="sec-h">Zone mesh</div>
-    <div class="layer"><input type="checkbox" id="ly-zone" checked><i class="sw" style="background:var(--signal)"></i>
-      <span class="lbl">Reports &amp; cell loss</span><span class="cnt" id="cnt-zone">0</span></div>
-    <div class="stat"><span>snapshot</span><b id="zone-gen">none loaded</b></div>
-    <div class="src">Drop a <code>thezone-eoc.json</code> anywhere on the map, or open with <code>?live=eoc.json</code> to poll a live export — same file the offline viewer reads.</div>
+<div class="hud status">
+  <div class="stat-line">
+    <span>Zulu <b class="z" id="zulu">--:--:--Z</b></span>
+    <span>Status: <b class="live" id="status">Connecting</b></span>
+    <span class="hide-m"><b class="n" id="n-layers">0</b> Layers</span>
+    <span class="hide-m"><b class="n" id="n-ent">0</b> Entities</span>
+  </div>
+  <div class="actions">
+    <button class="btn ab" id="btn-about" type="button">About</button>
+    <a class="btn pri" href="/zone.apk" download>
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Get the app</a>
+  </div>
+</div>
 
-    <div class="sec-h">Open hazard feeds</div>
-    <div class="layer"><input type="checkbox" id="ly-quake" checked><i class="sw" style="background:#f2a93b"></i>
-      <span class="lbl">Earthquakes (7d)</span><span class="cnt" id="cnt-quake">–</span></div>
-    <div class="src">USGS Earthquake Hazards Program, public GeoJSON feed, no key.</div>
-    <div class="layer"><input type="checkbox" id="ly-eonet" checked><i class="sw" style="background:#ef5b32"></i>
-      <span class="lbl">Active hazards</span><span class="cnt" id="cnt-eonet">–</span></div>
-    <div class="src">NASA EONET — open wildfires, storms, volcanoes, floods. Public API, no key.</div>
-    <div class="layer"><input type="checkbox" id="ly-gdacs" checked><i class="sw" style="background:#c77a16"></i>
-      <span class="lbl">GDACS alerts</span><span class="cnt" id="cnt-gdacs">–</span></div>
-    <div class="src">Global Disaster Alert &amp; Coordination System — EU Joint Research Centre / UN. Severity-scored earthquakes, cyclones, floods, volcanoes worldwide. Public API, no key.</div>
-    <div class="layer"><input type="checkbox" id="ly-firms" checked><i class="sw" style="background:#ef5b32"></i>
-      <span class="lbl">Active fires (South Asia)</span><span class="cnt" id="cnt-firms">–</span></div>
-    <div class="src">NASA FIRMS — satellite-detected fire hotspots, last 24h, scoped to South Asia. Served through Zone's own proxy so the API key never reaches the browser.</div>
+<nav class="hud rail panel" id="rail" aria-label="Layers"></nav>
+<section class="hud layers panel" id="layers" aria-label="Layer list"></section>
 
-    <div class="sec-h">Reading this map</div>
-    <div class="src">
-      Zone markers are the mesh's own picture, carried out of the blackout by a responder or a phone that regained
-      signal — not live-tracked positions. A dark ring marks a cell that went fully silent. Everything else on this
-      page is public open data, shown only for context; it is never sent into the mesh or the phone app.
+<div class="hud modes panel">
+  <div class="seg" id="seg-mode">
+    <button type="button" data-mode="3d" class="on"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>3D</button>
+    <button type="button" data-mode="2d"><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 12h17M12 5v14"/></svg>2D</button>
+  </div>
+  <span class="msep"></span>
+  <div class="seg" id="seg-base">
+    <button type="button" data-base="map" class="on"><svg class="i" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/></svg>MAP</button>
+    <button type="button" data-base="sat"><svg class="i" viewBox="0 0 24 24"><path d="M4 20 20 4M9 4l3 3-3 3-3-3ZM14 14l3 3-3 3-3-3Z"/></svg>SAT</button>
+  </div>
+</div>
+
+<div class="hud readout">
+  <span class="cur">Cursor <b id="r-cur">—</b></span>
+  <span>Location <b class="loc" id="r-loc">—</b></span>
+  <span>Zoom <b id="r-zoom">—</b></span>
+</div>
+
+<div class="hud pad panel" id="pad">
+  <button type="button" data-a="tilt" title="Tilt (3D)" aria-label="Tilt"><svg class="i" viewBox="0 0 24 24"><path d="M4 18 12 6l8 12Z"/></svg></button>
+  <button type="button" data-a="up" class="pan" aria-label="Pan up"><svg class="i" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></svg></button>
+  <button type="button" data-a="in" aria-label="Zoom in"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button type="button" data-a="left" class="pan" aria-label="Pan left"><svg class="i" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
+  <button type="button" data-a="north" title="Reset view (R)" aria-label="Reset view"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="m15 9-2 4-4 2 2-4Z"/></svg></button>
+  <button type="button" data-a="right" class="pan" aria-label="Pan right"><svg class="i" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg></button>
+  <button type="button" data-a="full" title="Fullscreen (F)" aria-label="Fullscreen"><svg class="i" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  <button type="button" data-a="down" class="pan" aria-label="Pan down"><svg class="i" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></svg></button>
+  <button type="button" data-a="out" aria-label="Zoom out"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+</div>
+<div class="hud hint">Press ? for shortcuts · F fullscreen · R reset · H home (Sikkim)</div>
+
+<section class="hud cam panel" id="cam" aria-label="Camera viewer">
+  <div class="top"><span id="cam-id">CAM</span><span id="cam-co"></span><span id="cam-z"></span></div>
+  <div class="head">
+    <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M3 8h4l1.5-2h7L17 8h4v11H3Z"/><circle cx="12" cy="13" r="3.5"/></svg></div>
+    <div><div class="t" id="cam-title">—</div><div class="s" id="cam-sub"></div></div>
+    <div class="tools">
+      <button class="ibtn" id="cam-refresh" type="button" title="Refresh" aria-label="Refresh"><svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/></svg></button>
+      <button class="ibtn" id="cam-fly" type="button" title="Show on map" aria-label="Show on map"><svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg></button>
+      <button class="ibtn x" id="cam-close" type="button" title="Close" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-  </aside>
-</main>
-<div id="popup-tip"></div>
+  </div>
+  <div class="media" id="cam-media"></div>
+  <div class="foot">
+    <div>Feed type<b id="cam-type">—</b></div>
+    <div>Status<b class="st" id="cam-status">—</b></div>
+    <div class="acts"><a class="btn" id="cam-raw" href="#" target="_blank" rel="noopener noreferrer">Raw feed</a></div>
+  </div>
+  <div class="attr" id="cam-attr"></div>
+</section>
+
+<section class="hud about" id="about" aria-label="About this page">
+  <div class="card">
+    <button class="btn close" id="about-close" type="button">Close</button>
+    <h3>Zone · Phase 1</h3>
+    <h2>See it coming — while the network is still up.</h2>
+    <p>This page is the <b>online</b> half of Zone: a situational-awareness view for a control room or an NGO desk that
+       still has a connection. It watches the planet's open hazard data — earthquakes, fires, disaster alerts, public
+       traffic cameras — so you can see what is developing, and where, before anything breaks.</p>
+    <div class="two">
+      <div class="ph"><b>Phase 1 · this page</b><p>Everything here needs internet. It is recorded and read while the world is
+        connected — the "before" picture.</p></div>
+      <div class="ph two-b"><b>Phase 2 · Zone, the main product</b><p>When the towers go down, the Zone app takes over:
+        phones relay tiny 31-byte status signals over Bluetooth, and the Dead Man's Packet turns a silent phone into an
+        early warning. No network. No servers.</p></div>
+    </div>
+    <p><b>About the cameras.</b> The feeds shown are official open-data traffic cameras (London and Hong Kong). They show
+       what a public feed looks like — they are <i>not</i> cameras inside a disaster zone, which would lose power and
+       connectivity in the same event that takes down the network. That is exactly the gap Zone's mesh is built for.</p>
+    <div class="row">
+      <a class="btn pri" href="/zone.apk" download>Get the Zone app (APK)</a>
+      <a class="btn" href="/viewer.html">Offline EOC viewer</a>
+      <a class="btn" href="/">Zone home</a>
+    </div>
+    <div class="src">
+      DATA &amp; ATTRIBUTION — Earthquakes: USGS · Hazards: NASA EONET · Fires: NASA FIRMS · Disaster alerts: GDACS (EU JRC / UN) ·
+      Cameras: Transport for London "Powered by TfL Open Data"; Hong Kong Transport Department via data.gov.hk ·
+      Basemap: © CARTO, © OpenStreetMap contributors · Imagery: Esri, Maxar, Earthstar Geographics · Terrain: Mapzen/AWS Open Data ·
+      Map engine: MapLibre GL JS. Layout approach informed by the MIT-licensed OSIRIS project (simplifaisoul/osiris).
+    </div>
+  </div>
+</section>
+
+<div id="tip"></div>
+
+<div class="hud ticker" aria-label="Live earthquake ticker">
+  <div class="lab"><i></i>LIVE</div>
+  <div class="win"><div class="track" id="track"></div></div>
+</div>
 
 <script>
-const $ = id => document.getElementById(id);
-const ORIGIN_LAT = 28.2814, ORIGIN_LON = 85.3779;   // docs/PACKET_SPEC.md default incident origin
-const CELL_UNIT = 90;                                // grid cell = floorDiv(delta, 90); ~100 m/cell
-const DEG_PER_UNIT = 1e-5;                            // PACKET_SPEC position encoding
+"use strict";
+const $ = (id) => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+const isPhone = matchMedia("(max-width: 760px)").matches;
 
-function cellToLatLon(lat, lon, originLat=ORIGIN_LAT, originLon=ORIGIN_LON){
-  return [
-    originLon + (lon*CELL_UNIT + CELL_UNIT/2) * DEG_PER_UNIT,   // maplibre wants [lon,lat]
-    originLat + (lat*CELL_UNIT + CELL_UNIT/2) * DEG_PER_UNIT,
-  ];
-}
+/* ------------------------------------------------------------------ config */
+const DM_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+const SAT_TILES = ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"];
+const DEM_TILES = ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"];
+/* Esri's real imagery over Sikkim ends at zoom 18; at zoom 19 the server answers with a
+   "Map data not yet available" placeholder tile. Cap the source at 18 so MapLibre stretches
+   the last real level instead of ever requesting the placeholder. */
+const SAT_MAX_NATIVE_ZOOM = 18;
 
+const HOME = { center: [88.6138, 27.3314], zoom: 11.2, pitch: 60, bearing: -20 };   // Gangtok, Sikkim
+const START = { center: [82, 22], zoom: isPhone ? 1.2 : 2.15 };
+const SAFE_IMG = /^https:\/\/(s3-eu-west-1\.amazonaws\.com\/jamcams\.tfl\.gov\.uk\/|tdcctv\.data\.one\.gov\.hk\/)/;
+
+const ORIGIN_LAT = 28.2814, ORIGIN_LON = 85.3779, CELL_UNIT = 90, DEG_PER_UNIT = 1e-5;   // docs/PACKET_SPEC.md
+const cellToLonLat = (la, lo) => [ORIGIN_LON + (lo * CELL_UNIT + CELL_UNIT / 2) * DEG_PER_UNIT,
+                                  ORIGIN_LAT + (la * CELL_UNIT + CELL_UNIT / 2) * DEG_PER_UNIT];
+
+/* -------------------------------------------------------------------- icons */
+const ICON = {
+  layers: '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/>',
+  net:    '<circle cx="6" cy="17" r="2.2"/><circle cx="18" cy="17" r="2.2"/><circle cx="12" cy="6" r="2.2"/><path d="m11 8-4 7M13 8l4 7M8.2 17h7.6"/>',
+  quake:  '<path d="M2 12h4l2.5-6 4 12 3-9 1.5 3H22"/>',
+  hazard: '<path d="M12 3 21 12 12 21 3 12Z"/><path d="M12 8v5M12 16v.01"/>',
+  alert:  '<path d="M12 3 22 20H2Z"/><path d="M12 10v5M12 17.5v.01"/>',
+  fire:   '<path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 .3 1.5 1 2 2 2 0-3-1-5 1-8Z"/>',
+  camera: '<path d="M3 8h4l1.5-2h7L17 8h4v11H3Z"/><circle cx="12" cy="13" r="3.5"/>',
+  night:  '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/>',
+  info:   '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
+};
+const svg = (k) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+
+/* ------------------------------------------------------------ layer registry */
+const LAYERS = [
+  { id: "zone",  name: "Zone mesh",       sub: "Offline-mesh reports & cell loss", icon: "net",    color: "#1be7c4",
+    ids: ["zone-cell", "zone-loss-halo", "zone-loss"],
+    note: "Your own Zone export. Drop a thezone-eoc.json on the map, or open this page with ?live=eoc.json. Shows a labelled demo until you do." },
+  { id: "quake", name: "Earthquakes",     sub: "USGS · M2.5+ · last 7 days",       icon: "quake",  color: "#f2a93b",
+    ids: ["quakes-halo", "quakes-dot", "quakes-label"], note: "USGS Earthquake Hazards Program — public GeoJSON feed, no key." },
+  { id: "eonet", name: "Natural hazards", sub: "NASA EONET · open events",         icon: "hazard", color: "#ef5b32",
+    ids: ["eonet-icon"], note: "NASA EONET — wildfires, storms, volcanoes, floods. Public API, no key." },
+  { id: "gdacs", name: "Disaster alerts", sub: "GDACS · EU JRC / UN",              icon: "alert",  color: "#c77a16",
+    ids: ["gdacs-icon"], note: "Global Disaster Alert and Coordination System — severity-scored (green / orange / red)." },
+  { id: "fires", name: "Active fires",    sub: "NASA FIRMS · South Asia · 24 h",   icon: "fire",   color: "#ff6a2b",
+    ids: ["firms-glow", "firms-dot"], note: "NASA FIRMS satellite fire detections, served through Zone's own proxy so the API key never reaches your browser." },
+  { id: "cams",  name: "Traffic cameras", sub: "London TfL + Hong Kong TD",        icon: "camera", color: "#4ade80",
+    ids: ["cams-cluster", "cams-cluster-count", "cams-dot"],
+    note: "Official open-data camera feeds. A demonstration of the pre-disaster picture — not cameras inside a disaster zone." },
+  { id: "night", name: "Day / night",     sub: "Solar terminator, live",           icon: "night",  color: "#8aa0c8",
+    ids: ["night-fill"], note: "Computed in your browser from the current UTC time." },
+];
+const state = { mode: "3d", base: "map", terrain: false, on: {}, count: {}, demo: true, loaded: {} };
+LAYERS.forEach((l) => { state.on[l.id] = true; state.count[l.id] = 0; });
+if (qs.get("layers")) { const want = new Set(qs.get("layers").split(",")); LAYERS.forEach((l) => { state.on[l.id] = want.has(l.id); }); }
+
+/* ----------------------------------------------------------------------- map */
 const map = new maplibregl.Map({
-  container: "map",
-  center: [ORIGIN_LON, ORIGIN_LAT],
-  zoom: 11, pitch: 55, bearing: -20, antialias: true,
-  // On a touch screen, a one-finger swipe passes through to scroll the page
-  // instead of panning the map — otherwise, once the map fills the visible
-  // screen while scrolling, there's no non-map area left to grab and the
-  // page can feel stuck. Two fingers still pans/zooms the map normally.
-  cooperativeGestures: true,
-  style: {
-    version: 8,
-    sources: {
-      sat: {
-        type: "raster", tileSize: 256,
-        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-        attribution: "Esri World Imagery",
-      },
-      terrain: {
-        type: "raster-dem", tileSize: 256, encoding: "terrarium",
-        tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
-      },
-    },
-    layers: [{ id: "sat", type: "raster", source: "sat" }],
-    terrain: { source: "terrain", exaggeration: 1.4 },
-  },
+  container: "map", style: DM_STYLE,
+  center: START.center, zoom: START.zoom, minZoom: 0.8, maxZoom: 20, maxPitch: 80,
+  attributionControl: false, canvasContextAttributes: { antialias: true },
 });
-map.addControl(new maplibregl.NavigationControl({visualizePitch:true}), "top-right");
-map.addControl(new maplibregl.AttributionControl({compact:true}));
+map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" }), "bottom-left");
+map.on("error", (e) => { if (qs.has("debug")) console.error("MAPERR", e && e.error && e.error.message); /* a missing tile must never take the page down */ });
+map.on("style.load", () => { map.setProjection({ type: state.mode === "3d" ? "globe" : "mercator" }); });
 
-const tip = $("popup-tip");
-/* title/lines are always set via textContent below, never innerHTML — the
- * quake/EONET feeds are open, third-party APIs and their text fields (place
- * names, event titles) must never be treated as trusted markup. */
-function showTip(e, title, lines, titleColor){
+const EMPTY = { type: "FeatureCollection", features: [] };
+const $img = (draw, w = 28, h = 28) => {
+  const c = document.createElement("canvas"); c.width = w * 2; c.height = h * 2;
+  const g = c.getContext("2d"); g.scale(2, 2); draw(g, w, h);
+  return g.getImageData(0, 0, w * 2, h * 2);
+};
+const poly = (g, pts, fill, stroke) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();
+  g.fillStyle = fill; g.fill(); g.lineWidth = 2; g.strokeStyle = stroke; g.stroke(); };
+
+function addIcons() {
+  map.addImage("diamond", $img((g) => poly(g, [[14, 3], [25, 14], [14, 25], [3, 14]], "#ef5b32", "#180a06")), { pixelRatio: 2 });
+  [["green", "#3fbf9c"], ["orange", "#f0902a"], ["red", "#ef3f2f"]].forEach(([n, col]) =>
+    map.addImage("tri-" + n, $img((g) => poly(g, [[14, 3], [26, 24], [2, 24]], col, "#180a06")), { pixelRatio: 2 }));
+}
+
+function addBaseLayers() {
+  const sym = map.getStyle().layers.find((l) => l.type === "symbol"), firstSymbol = sym && sym.id;
+  map.addSource("dem", { type: "raster-dem", tiles: DEM_TILES, tileSize: 256, maxzoom: 15, encoding: "terrarium",
+    attribution: "Terrain: Mapzen / AWS Open Data" });
+  map.addLayer({ id: "hillshade", type: "hillshade", source: "dem",
+    paint: { "hillshade-exaggeration": 0.5, "hillshade-shadow-color": "#000000", "hillshade-highlight-color": "#33434d", "hillshade-accent-color": "#111b22" } }, firstSymbol);
+  map.addSource("sat", { type: "raster", tiles: SAT_TILES, tileSize: 256, maxzoom: SAT_MAX_NATIVE_ZOOM,
+    attribution: "Imagery: Esri, Maxar, Earthstar Geographics" });
+  map.addLayer({ id: "sat", type: "raster", source: "sat", layout: { visibility: "none" },
+    paint: { "raster-brightness-max": 0.82, "raster-saturation": -0.12, "raster-contrast": 0.06, "raster-fade-duration": 250 } }, firstSymbol);
+  map.addSource("night", { type: "geojson", data: EMPTY });
+  map.addLayer({ id: "night-fill", type: "fill", source: "night", paint: { "fill-color": "#010309", "fill-opacity": 0.42 } }, firstSymbol);
+}
+
+function addDataLayers() {
+  ["quakes", "eonet", "gdacs", "firms", "zone"].forEach((s) => map.addSource(s, { type: "geojson", data: EMPTY }));
+  map.addSource("cams", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 42, clusterMaxZoom: 10 });
+
+  map.addLayer({ id: "quakes-halo", type: "circle", source: "quakes", paint: {
+    "circle-radius": ["interpolate", ["linear"], ["get", "mag"], 2.5, 7, 4.5, 17, 6.5, 34], "circle-color": "rgba(242,169,59,0.16)", "circle-blur": 0.8 } });
+  map.addLayer({ id: "quakes-dot", type: "circle", source: "quakes", paint: {
+    "circle-radius": ["interpolate", ["linear"], ["get", "mag"], 2.5, 3, 4.5, 6, 6.5, 11], "circle-color": "rgba(242,169,59,0.55)",
+    "circle-stroke-color": "#f2a93b", "circle-stroke-width": 1.4 } });
+  map.addLayer({ id: "quakes-label", type: "symbol", source: "quakes", filter: [">=", ["get", "mag"], 4.5], layout: {
+    "text-field": ["concat", "M", ["to-string", ["get", "mag"]]], "text-font": ["Montserrat Medium"], "text-size": 11,
+    "text-offset": [0, -1.5], "text-optional": true }, paint: { "text-color": "#f5c56a", "text-halo-color": "#03060a", "text-halo-width": 1.6 } });
+
+  map.addLayer({ id: "eonet-icon", type: "symbol", source: "eonet", layout: { "icon-image": "diamond", "icon-size": 0.62, "icon-allow-overlap": true } });
+  map.addLayer({ id: "gdacs-icon", type: "symbol", source: "gdacs", layout: { "icon-image": ["match", ["get", "level"], "Red", "tri-red", "Orange", "tri-orange", "tri-green"],
+    "icon-size": 0.66, "icon-allow-overlap": true } });
+
+  map.addLayer({ id: "firms-glow", type: "circle", source: "firms", paint: {
+    "circle-radius": ["interpolate", ["linear"], ["coalesce", ["get", "frp"], 1], 0, 9, 20, 22], "circle-color": "rgba(255,106,43,0.22)", "circle-blur": 0.9 } });
+  map.addLayer({ id: "firms-dot", type: "circle", source: "firms", paint: {
+    "circle-radius": ["interpolate", ["linear"], ["coalesce", ["get", "frp"], 1], 0, 3, 20, 7], "circle-color": "#ff6a2b", "circle-opacity": 0.85,
+    "circle-stroke-color": "#ffd0b0", "circle-stroke-width": 0.8 } });
+
+  map.addLayer({ id: "cams-cluster", type: "circle", source: "cams", filter: ["has", "point_count"], paint: {
+    "circle-radius": ["step", ["get", "point_count"], 14, 30, 18, 150, 24], "circle-color": "rgba(74,222,128,0.22)", "circle-stroke-color": "#4ade80", "circle-stroke-width": 1.6 } });
+  map.addLayer({ id: "cams-cluster-count", type: "symbol", source: "cams", filter: ["has", "point_count"], layout: {
+    "text-field": ["get", "point_count_abbreviated"], "text-font": ["Montserrat Medium"], "text-size": 11 }, paint: { "text-color": "#d9ffe6" } });
+  map.addLayer({ id: "cams-dot", type: "circle", source: "cams", filter: ["!", ["has", "point_count"]], paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 3.5, 12, 7, 17, 10], "circle-color": "#4ade80", "circle-stroke-color": "#04140a", "circle-stroke-width": 1.8 } });
+
+  map.addLayer({ id: "zone-cell", type: "circle", source: "zone", filter: ["==", ["get", "kind"], "cell"], paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, ["+", 5, ["get", "n"]], 14, ["+", 12, ["*", ["get", "n"], 3]]],
+    "circle-color": ["get", "color"], "circle-opacity": 0.88, "circle-stroke-color": "rgba(233,228,214,0.7)", "circle-stroke-width": 2 } });
+  map.addLayer({ id: "zone-loss-halo", type: "circle", source: "zone", filter: ["==", ["get", "kind"], "loss"], paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 14, 14, 30], "circle-color": "rgba(239,91,50,0.22)", "circle-blur": 0.6 } });
+  map.addLayer({ id: "zone-loss", type: "circle", source: "zone", filter: ["==", ["get", "kind"], "loss"], paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 8, 14, 17], "circle-color": "#05080b", "circle-stroke-color": "#ef5b32", "circle-stroke-width": 3 } });
+}
+
+/* --------------------------------------------------------- modes and layers */
+function applyLayerVisibility() {
+  LAYERS.forEach((l) => l.ids.forEach((id) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", state.on[l.id] ? "visible" : "none"); }));
+  document.querySelectorAll("[data-layer]").forEach((el) => {
+    const on = state.on[el.dataset.layer];
+    if (el.type === "checkbox") el.checked = on; else el.classList.toggle("on", on);
+  });
+  updateCounters();
+}
+function updateCounters() {
+  const active = LAYERS.filter((l) => state.on[l.id]);
+  $("n-layers").textContent = active.length;
+  $("n-ent").textContent = active.filter((l) => l.id !== "night").reduce((n, l) => n + (state.count[l.id] || 0), 0).toLocaleString();
+  LAYERS.forEach((l) => {
+    const c = state.count[l.id] || 0;
+    document.querySelectorAll(`[data-ct="${l.id}"]`).forEach((e) => { e.textContent = c ? c.toLocaleString() : "–"; });
+    const bd = document.querySelector(`#rail [data-layer="${l.id}"] .bd`);
+    if (bd) { bd.textContent = c > 999 ? Math.round(c / 100) / 10 + "k" : c; bd.classList.toggle("has", c > 0); }
+  });
+}
+function setBase(b) {
+  state.base = b;
+  if (map.getLayer("sat")) map.setLayoutProperty("sat", "visibility", b === "sat" ? "visible" : "none");
+  if (map.getLayer("hillshade")) map.setLayoutProperty("hillshade", "visibility", b === "sat" ? "none" : "visible");
+  document.querySelectorAll("#seg-base button").forEach((x) => x.classList.toggle("on", x.dataset.base === b));
+}
+function setMode(m) {
+  state.mode = m;
+  if (m === "3d") { map.setProjection({ type: "globe" }); map.setMaxPitch(80); map.dragRotate.enable(); }
+  else { map.setProjection({ type: "mercator" }); map.easeTo({ pitch: 0, bearing: 0, duration: 400 }); setTimeout(() => map.setMaxPitch(0), 450); map.dragRotate.disable(); }
+  syncTerrain();
+  document.querySelectorAll("#seg-mode button").forEach((x) => x.classList.toggle("on", x.dataset.mode === m));
+}
+/* Real relief only once the globe has already flattened into the regular map (zoom >= ~10.5). */
+function syncTerrain() {
+  const want = state.mode === "3d" && map.getZoom() >= 10.5;
+  if (want === state.terrain) return;
+  try { map.setTerrain(want ? { source: "dem", exaggeration: 1.35 } : null); state.terrain = want; } catch (e) { /* keep the flat map */ }
+}
+function goHome() {
+  const opt = state.mode === "3d" ? HOME : { ...HOME, pitch: 0, bearing: 0 };
+  map.flyTo({ ...opt, essential: true, duration: 2600 });
+}
+function resetView() { map.flyTo({ center: START.center, zoom: START.zoom, pitch: 0, bearing: 0, duration: 1600 }); }
+
+/* --------------------------------------------------------------- tooltips */
+const tip = $("tip");
+function showTip(point, title, lines, thumb) {
   tip.textContent = "";
-  const t = document.createElement("div");
-  t.className = "t"; t.textContent = title;
-  if(titleColor) t.style.color = titleColor;
-  tip.appendChild(t);
-  (lines||[]).forEach(line => {
-    const k = document.createElement("div");
-    k.className = "k"; k.textContent = line;
-    tip.appendChild(k);
-  });
+  if (thumb && SAFE_IMG.test(thumb)) { const im = new Image(); im.alt = ""; im.src = thumb; tip.appendChild(im); }
+  const t = document.createElement("div"); t.className = "t"; t.textContent = title; tip.appendChild(t);
+  (lines || []).forEach((s) => { if (!s) return; const k = document.createElement("div"); k.className = "k"; k.textContent = s; tip.appendChild(k); });
   tip.style.display = "block";
-  tip.style.left = (e.point.x + 14) + "px"; tip.style.top = (e.point.y + 10) + "px";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(point.x + 16, innerWidth - w - 8) + "px";
+  tip.style.top = Math.min(Math.max(point.y + 14, 8), innerHeight - h - 40) + "px";
 }
-function hideTip(){ tip.style.display = "none"; }
-map.getCanvasContainer().addEventListener("mousemove", () => {});
+const hideTip = () => { tip.style.display = "none"; };
+const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? "just now" : m < 90 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
 
-/* ---------------- Zone mesh layer ---------------- */
-const zoneMarkers = [];
-function clearZone(){ zoneMarkers.forEach(m => m.remove()); zoneMarkers.length = 0; }
-
-function sevColor(t){
-  const L=(a,b,k)=>a.map((v,i)=>Math.round(v+(b[i]-v)*k));
-  const calm=[31,110,123],shoal=[63,167,160],amber=[242,169,59],alarm=[239,91,50];
-  const c = t<.34?L(calm,shoal,t/.34):t<.67?L(shoal,amber,(t-.34)/.33):L(amber,alarm,(t-.67)/.33);
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
+const INTERACTIVE = ["quakes-dot", "eonet-icon", "gdacs-icon", "firms-dot", "cams-dot", "cams-cluster", "zone-cell", "zone-loss"];
+function describe(f, point) {
+  const p = f.properties, id = f.layer.id;
+  if (id === "quakes-dot") return showTip(point, `M${p.mag} earthquake`, [p.place, ago(p.time)]);
+  if (id === "eonet-icon") return showTip(point, p.cat || "Natural hazard", [p.title]);
+  if (id === "gdacs-icon") return showTip(point, p.name || "GDACS alert", [`${p.level} alert · ${p.type}`, p.desc]);
+  if (id === "firms-dot") return showTip(point, "Active fire (VIIRS)", [`confidence ${p.conf || "?"} · FRP ${p.frp != null ? Number(p.frp).toFixed(1) : "?"} MW`, `${p.date || ""} ${p.time || ""} UTC`]);
+  if (id === "cams-cluster") return showTip(point, `${p.point_count} cameras`, ["Click to zoom in"]);
+  if (id === "cams-dot") return showTip(point, p.name, [p.place, "Click to open the feed"], p.img);
+  if (id === "zone-cell") return showTip(point, `Cell (${p.la}, ${p.lo})`, [`${p.n} report${p.n === 1 ? "" : "s"} · avg severity ${(p.avg * 15).toFixed(1)}/15`, state.demo ? "DEMO SNAPSHOT — not live data" : ""]);
+  if (id === "zone-loss") return showTip(point, "CELL_LOSS", [`${p.count} devices went silent together`, state.demo ? "DEMO SNAPSHOT — not live data" : ""]);
 }
-
-function ingestZone(data){
-  clearZone();
-  const reports = data.reports||[], losses = data.cellLosses||[];
-  const cells = new Map();
-  for(const r of reports){
-    const k = r.cell.lat+","+r.cell.lon;
-    const c = cells.get(k) || {lat:r.cell.lat,lon:r.cell.lon,n:0,sevSum:0};
-    c.n++; c.sevSum += r.severity; cells.set(k,c);
-  }
-  for(const c of cells.values()){
-    const [lon,lat] = cellToLatLon(c.lat,c.lon);
-    const avg = (c.sevSum/c.n)/15;
-    const el = document.createElement("div");
-    el.style.cssText = `width:${18+c.n*4}px;height:${18+c.n*4}px;border-radius:50%;
-      background:${sevColor(avg)};opacity:.85;border:2px solid rgba(237,232,218,.6);cursor:pointer`;
-    el.addEventListener("mousemove", e => showTip(e, `Cell (${c.lat},${c.lon})`,
-      [`${c.n} report${c.n===1?"":"s"} · avg severity ${(avg*15).toFixed(1)}/15`]));
-    el.addEventListener("mouseleave", hideTip);
-    zoneMarkers.push(new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map));
-  }
-  for(const l of losses){
-    const [lon,lat] = cellToLatLon(l.cell.lat,l.cell.lon);
-    const el = document.createElement("div");
-    el.style.cssText = `width:30px;height:30px;border-radius:50%;background:#070a0d;
-      border:3px solid #ef5b32;box-shadow:0 0 0 4px rgba(239,91,50,.25);cursor:pointer`;
-    el.addEventListener("mousemove", e => showTip(e, "CELL_LOSS",
-      [`${l.deviceCount} device(s) went silent together`], "#ef5b32"));
-    el.addEventListener("mouseleave", hideTip);
-    zoneMarkers.push(new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map));
-  }
-  $("cnt-zone").textContent = cells.size + losses.length;
-  $("zone-gen").textContent = new Date(data.generatedAt).toLocaleTimeString();
-}
-
-/* file drop, same convention as viewer.html */
-["dragenter","dragover"].forEach(ev => document.addEventListener(ev, e => e.preventDefault()));
-document.addEventListener("drop", e => {
-  e.preventDefault();
-  const f = e.dataTransfer.files[0];
-  if(f) f.text().then(t => { try{ ingestZone(JSON.parse(t)); }catch(err){} });
-});
-(function(){
-  const src = new URLSearchParams(location.search).get("live");
-  if(!src) return;
-  let lastGen = 0;
-  async function tick(){
-    try{
-      const r = await fetch(src + "?_=" + Date.now(), {cache:"no-store"});
-      const data = await r.json();
-      if(data.generatedAt !== lastGen){ lastGen = data.generatedAt; ingestZone(data); }
-    }catch(e){}
-  }
-  tick(); setInterval(tick, 4000);
-})();
-
-$("ly-zone").addEventListener("change", e => {
-  zoneMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
-});
-
-/* ---------------- USGS earthquakes (open, no key) ---------------- */
-const quakeMarkers = [];
-fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson")
-  .then(r => r.json())
-  .then(fc => {
-    $("cnt-quake").textContent = fc.features.length;
-    for(const f of fc.features){
-      const [lon,lat] = f.geometry.coordinates;
-      const mag = f.properties.mag || 0;
-      const el = document.createElement("div");
-      const size = Math.max(8, mag*5);
-      el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:rgba(242,169,59,.35);
-        border:2px solid #f2a93b;cursor:pointer`;
-      el.addEventListener("mousemove", e => showTip(e, `M${mag.toFixed(1)} earthquake`,
-        [String(f.properties.place||""), new Date(f.properties.time).toLocaleString()]));
-      el.addEventListener("mouseleave", hideTip);
-      const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
-      quakeMarkers.push(mk);
-    }
-  })
-  .catch(() => { $("cnt-quake").textContent = "offline"; });
-$("ly-quake").addEventListener("change", e => {
-  quakeMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
-});
-
-/* ---------------- NASA EONET open hazard events (open, no key) ---------------- */
-const eonetMarkers = [];
-fetch("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=150")
-  .then(r => r.json())
-  .then(d => {
-    const events = d.events || [];
-    $("cnt-eonet").textContent = events.length;
-    for(const ev of events){
-      const geo = ev.geometry && ev.geometry[ev.geometry.length-1];
-      if(!geo || geo.type !== "Point") continue;
-      const [lon,lat] = geo.coordinates;
-      const cat = (ev.categories && ev.categories[0] && ev.categories[0].title) || "Event";
-      const el = document.createElement("div");
-      el.style.cssText = `width:14px;height:14px;border-radius:3px;background:#ef5b32;
-        border:2px solid #070a0d;cursor:pointer;transform:rotate(45deg)`;
-      el.addEventListener("mousemove", e => showTip(e, String(cat), [String(ev.title||"")]));
-      el.addEventListener("mouseleave", hideTip);
-      const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
-      eonetMarkers.push(mk);
-    }
-  })
-  .catch(() => { $("cnt-eonet").textContent = "offline"; });
-$("ly-eonet").addEventListener("change", e => {
-  eonetMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
-});
-
-/* ---------------- GDACS — EU JRC / UN disaster alerts (open, no key) ---------------- */
-const gdacsMarkers = [];
-const GDACS_COLOR = {Green:"#3fa7a0", Orange:"#c77a16", Red:"#ef5b32"};
-fetch("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH")
-  .then(r => r.json())
-  .then(d => {
-    const features = d.features || [];
-    $("cnt-gdacs").textContent = features.length;
-    for(const f of features){
-      const geo = f.geometry;
-      if(!geo || geo.type !== "Point") continue;
-      const [lon,lat] = geo.coordinates;
-      const p = f.properties || {};
-      const level = p.alertlevel || "Green";
-      const color = GDACS_COLOR[level] || GDACS_COLOR.Green;
-      const el = document.createElement("div");
-      el.style.cssText = `width:15px;height:15px;border-radius:3px;background:${color};
-        border:2px solid #070a0d;cursor:pointer;transform:rotate(45deg)`;
-      el.addEventListener("mousemove", e => showTip(e, String(p.name || p.eventtype || "GDACS event"),
-        [`${level} alert · ${String(p.eventtype||"")}`, String(p.description||"")]));
-      el.addEventListener("mouseleave", hideTip);
-      const mk = new maplibregl.Marker({element:el}).setLngLat([lon,lat]).addTo(map);
-      gdacsMarkers.push(mk);
-    }
-  })
-  .catch(() => { $("cnt-gdacs").textContent = "offline"; });
-$("ly-gdacs").addEventListener("change", e => {
-  gdacsMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
-});
-
-/* ---------------- NASA FIRMS active fires, via Zone's own proxy ---------------- */
-/* /api/firms holds the personal MAP_KEY server-side (Vercel env var) — never
- * shipped to the browser. See api/firms.js. */
-const firmsMarkers = [];
-fetch("/api/firms")
-  .then(r => r.json())
-  .then(d => {
-    const points = d.points || [];
-    $("cnt-firms").textContent = points.length;
-    for(const p of points){
-      const el = document.createElement("div");
-      const size = p.frp ? Math.max(8, Math.min(20, 8 + p.frp)) : 10;
-      el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:rgba(239,91,50,.45);
-        border:2px solid #ef5b32;cursor:pointer`;
-      el.addEventListener("mousemove", e => showTip(e, "Active fire (VIIRS)",
-        [`confidence ${p.confidence||"?"} · FRP ${p.frp!=null?p.frp.toFixed(1):"?"} MW`, `${p.acqDate||""} ${p.acqTime||""} UTC`]));
-      el.addEventListener("mouseleave", hideTip);
-      const mk = new maplibregl.Marker({element:el}).setLngLat([p.lon,p.lat]).addTo(map);
-      firmsMarkers.push(mk);
-    }
-  })
-  .catch(() => { $("cnt-firms").textContent = "offline"; });
-$("ly-firms").addEventListener("change", e => {
-  firmsMarkers.forEach(m => m.getElement().style.display = e.target.checked ? "" : "none");
-});
-
-/* demo snapshot so the map isn't empty on first open, same as viewer.html */
-if(!new URLSearchParams(location.search).get("live")){
-  ingestZone({
-    generatedAt: Date.now(),
-    reports:[
-      {cell:{lat:2,lon:-1},severity:11},{cell:{lat:2,lon:-1},severity:9},
-      {cell:{lat:2,lon:-1},severity:10},{cell:{lat:3,lon:2},severity:7},
-      {cell:{lat:5,lon:5},severity:3},
-    ],
-    cellLosses:[{cell:{lat:-1,lon:1},deviceCount:12}],
+function visibleInteractive() { return INTERACTIVE.filter((id) => map.getLayer(id) && map.getLayoutProperty(id, "visibility") !== "none"); }
+let moveRaf = 0;
+map.on("mousemove", (e) => {
+  $("r-cur").textContent = `${e.lngLat.lat.toFixed(4)}, ${e.lngLat.lng.toFixed(4)}`;
+  if (moveRaf) return;
+  moveRaf = requestAnimationFrame(() => {
+    moveRaf = 0;
+    const f = map.queryRenderedFeatures(e.point, { layers: visibleInteractive() })[0];
+    map.getCanvas().style.cursor = f ? "pointer" : "";
+    f ? describe(f, e.point) : hideTip();
   });
+});
+map.on("mouseout", hideTip);
+map.on("movestart", hideTip);
+map.on("click", (e) => {
+  const f = map.queryRenderedFeatures(e.point, { layers: visibleInteractive() })[0];
+  if (!f) return hideTip();
+  if (f.layer.id === "cams-cluster") {
+    map.getSource("cams").getClusterExpansionZoom(f.properties.cluster_id).then((z) => map.easeTo({ center: f.geometry.coordinates, zoom: z + 0.4 }));
+    return;
+  }
+  if (f.layer.id === "cams-dot") { openCam(f.properties, f.geometry.coordinates); return; }
+  describe(f, e.point);                                    // phones: a tap shows the detail card
+  clearTimeout(describe.t); describe.t = setTimeout(hideTip, 6000);
+});
+
+/* ------------------------------------------------------------ camera panel */
+const cam = { p: null, ll: null, timer: 0 };
+function openCam(p, ll) {
+  cam.p = p; cam.ll = ll; hideTip();
+  $("cam").classList.add("open");
+  $("cam-id").textContent = "CAM-" + String(p.id).replace(/^JamCams_/, "");
+  $("cam-co").textContent = `${ll[1].toFixed(4)}, ${ll[0].toFixed(4)}`;
+  $("cam-title").textContent = p.name;
+  $("cam-sub").textContent = [p.place, "Source: " + p.src].filter(Boolean).join(" · ");
+  $("cam-type").textContent = p.vid ? "MP4 clip · loops" : "JPG snapshot";
+  $("cam-status").textContent = "Active";
+  $("cam-attr").textContent = p.src.indexOf("TfL") === 0 ? "Powered by TfL Open Data." : "Hong Kong Transport Department, via data.gov.hk.";
+  $("cam-raw").href = SAFE_IMG.test(p.img) ? p.img : "#";
+  mountMedia();
+  clearInterval(cam.timer); cam.timer = setInterval(() => { if (!cam.p) return; mountMedia(); }, p.vid ? 60000 : 20000);
 }
+function closeCam() { $("cam").classList.remove("open"); cam.p = null; clearInterval(cam.timer); $("cam-media").textContent = ""; }
+function mountMedia() {
+  const p = cam.p, holder = $("cam-media"); holder.textContent = "";
+  const badge = document.createElement("div"); badge.className = "live"; const dot = document.createElement("i");
+  badge.appendChild(dot); badge.appendChild(document.createTextNode(p.vid ? "LIVE CLIP" : "LIVE SNAPSHOT"));
+  const showImg = () => {
+    holder.textContent = ""; const im = new Image(); im.alt = p.name;
+    im.onerror = () => { holder.textContent = "This feed is unavailable right now."; $("cam-status").textContent = "Offline"; };
+    im.onload = () => { $("cam-status").textContent = "Active / recording"; };
+    if (!SAFE_IMG.test(p.img)) { holder.textContent = "Feed blocked (unrecognised source)."; return; }
+    im.src = p.img + (p.img.indexOf("?") < 0 ? "?" : "&") + "_=" + Date.now();
+    holder.appendChild(im); holder.appendChild(badge);
+  };
+  if (p.vid && SAFE_IMG.test(p.vid)) {
+    const v = document.createElement("video"); v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true; v.poster = SAFE_IMG.test(p.img) ? p.img : "";
+    v.onerror = showImg; v.onplaying = () => { $("cam-status").textContent = "Active / recording"; };
+    v.src = p.vid + "?_=" + Date.now(); holder.appendChild(v); holder.appendChild(badge);
+    const pr = v.play(); if (pr && pr.catch) pr.catch(showImg);
+  } else showImg();
+}
+$("cam-close").onclick = closeCam;
+$("cam-refresh").onclick = () => cam.p && mountMedia();
+$("cam-fly").onclick = () => cam.ll && map.flyTo({ center: cam.ll, zoom: Math.max(map.getZoom(), 15), duration: 1600 });
+
+/* ------------------------------------------------------------- data feeds */
+async function getJSON(url, ms = 15000) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const setData = (src, fc) => map.getSource(src) && map.getSource(src).setData(fc);
+const pt = (lon, lat, props) => ({ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: props });
+function done(id, n) { state.count[id] = n; state.loaded[id] = true; updateCounters(); setStatus(); }
+function fail(id) { state.count[id] = 0; state.loaded[id] = "fail"; updateCounters(); setStatus(); }
+function setStatus() {
+  const el = $("status"); const vals = Object.values(state.loaded);
+  if (!navigator.onLine) { el.textContent = "Offline — use the Zone app"; el.className = "warn"; return; }
+  if (!vals.length) { el.textContent = "Connecting"; el.className = "warn"; return; }
+  const bad = vals.filter((v) => v === "fail").length;
+  el.textContent = bad ? "Live · " + bad + " feed" + (bad > 1 ? "s" : "") + " down" : "Live"; el.className = bad ? "warn" : "live";
+}
+
+async function loadQuakes() {
+  try {
+    const d = await getJSON("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson");
+    const f = d.features.filter((x) => x.geometry).map((x) => pt(x.geometry.coordinates[0], x.geometry.coordinates[1],
+      { mag: x.properties.mag || 0, place: x.properties.place || "", time: x.properties.time }));
+    setData("quakes", { type: "FeatureCollection", features: f }); done("quake", f.length);
+  } catch (e) { fail("quake"); }
+}
+async function loadTicker() {
+  try {
+    let d = await getJSON("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson");
+    let list = d.features;
+    if (list.length < 4) list = list.concat((await getJSON("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson")).features.slice(0, 20));
+    const track = $("track"); track.textContent = "";
+    const mk = () => list.slice(0, 40).map((x) => {
+      const b = document.createElement("button"); b.className = "tk"; b.type = "button";
+      const dot = document.createElement("span"); dot.className = "d";
+      const m = document.createElement("span"); m.className = "m"; m.textContent = "M" + (x.properties.mag || 0).toFixed(1);
+      const pl = document.createElement("span"); pl.textContent = x.properties.place || "";
+      const t = document.createElement("em"); t.textContent = ago(x.properties.time);
+      b.append(dot, m, pl, t);
+      b.onclick = () => map.flyTo({ center: x.geometry.coordinates, zoom: Math.max(map.getZoom(), 5.5), duration: 2000 });
+      return b;
+    });
+    mk().forEach((n) => track.appendChild(n)); mk().forEach((n) => track.appendChild(n));      // duplicated for a seamless loop
+    track.style.setProperty("--dur", Math.max(40, list.slice(0, 40).length * 5) + "s");
+  } catch (e) { $("track").textContent = ""; }
+}
+async function loadEonet() {
+  try {
+    const d = await getJSON("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=200");
+    const f = [];
+    (d.events || []).forEach((ev) => { const g = ev.geometry && ev.geometry[ev.geometry.length - 1];
+      if (g && g.type === "Point") f.push(pt(g.coordinates[0], g.coordinates[1], { title: ev.title || "", cat: (ev.categories && ev.categories[0] && ev.categories[0].title) || "" })); });
+    setData("eonet", { type: "FeatureCollection", features: f }); done("eonet", f.length);
+  } catch (e) { fail("eonet"); }
+}
+async function loadGdacs() {
+  try {
+    const d = await getJSON("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH", 40000);
+    const f = (d.features || []).filter((x) => x.geometry && x.geometry.type === "Point").map((x) => pt(x.geometry.coordinates[0], x.geometry.coordinates[1],
+      { name: x.properties.name || "", level: x.properties.alertlevel || "Green", type: x.properties.eventtype || "", desc: x.properties.description || "" }));
+    setData("gdacs", { type: "FeatureCollection", features: f }); done("gdacs", f.length);
+  } catch (e) { fail("gdacs"); }
+}
+async function loadFires() {
+  try {
+    const d = await getJSON("/api/firms");
+    const f = (d.points || []).map((p) => pt(p.lon, p.lat, { frp: p.frp, conf: p.confidence, date: p.acqDate, time: p.acqTime }));
+    setData("firms", { type: "FeatureCollection", features: f }); done("fires", f.length);
+  } catch (e) { fail("fires"); }
+}
+async function loadCams() {
+  const feats = []; let ok = 0;
+  try {
+    const d = await getJSON("https://api.tfl.gov.uk/Place/Type/JamCam", 25000);
+    d.forEach((c) => {
+      const pr = {}; (c.additionalProperties || []).forEach((a) => { pr[a.key] = a.value; });
+      if (pr.available === "false" || !SAFE_IMG.test(pr.imageUrl || "")) return;
+      feats.push(pt(c.lon, c.lat, { src: "TfL JamCam", id: c.id, name: c.commonName, place: "London, UK", img: pr.imageUrl, vid: SAFE_IMG.test(pr.videoUrl || "") ? pr.videoUrl : "" }));
+    }); ok++;
+  } catch (e) { /* London feed down — Hong Kong may still load */ }
+  try {
+    const d = await getJSON("/api/cameras-hk", 25000);
+    (d.cameras || []).forEach((c) => feats.push(pt(c.lon, c.lat, { src: "HK Transport Dept", id: c.key, name: c.desc, place: [c.district, c.region].filter(Boolean).join(", "), img: c.url, vid: "" }))); ok++;
+  } catch (e) { /* Hong Kong feed down — London may still load */ }
+  setData("cams", { type: "FeatureCollection", features: feats });
+  ok ? done("cams", feats.length) : fail("cams");
+  if (qs.get("cam") && feats.length) {                      // ?cam=tfl or ?cam=hk — deep link for sharing and testing
+    const f = feats.find((x) => x.properties.src.toLowerCase().indexOf(qs.get("cam")) >= 0) || feats[0];
+    openCam(f.properties, f.geometry.coordinates); map.jumpTo({ center: f.geometry.coordinates, zoom: 13.5 });
+  }
+}
+
+/* --- Zone mesh: drop a thezone-eoc.json, or ?live=eoc.json to poll a live export ---------------- */
+const sevColor = (t) => { const L = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+  const calm = [31, 110, 123], shoal = [63, 167, 160], amber = [242, 169, 59], alarm = [239, 91, 50];
+  const c = t < .34 ? L(calm, shoal, t / .34) : t < .67 ? L(shoal, amber, (t - .34) / .33) : L(amber, alarm, (t - .67) / .33);
+  return `rgb(${c[0]},${c[1]},${c[2]})`; };
+function ingestZone(data, isDemo) {
+  const cells = new Map();
+  (data.reports || []).forEach((r) => { const k = r.cell.lat + "," + r.cell.lon;
+    const c = cells.get(k) || { la: r.cell.lat, lo: r.cell.lon, n: 0, sev: 0 }; c.n++; c.sev += r.severity; cells.set(k, c); });
+  const f = [];
+  cells.forEach((c) => { const avg = c.sev / c.n / 15; f.push(pt(...cellToLonLat(c.la, c.lo), { kind: "cell", la: c.la, lo: c.lo, n: c.n, avg, color: sevColor(avg) })); });
+  (data.cellLosses || []).forEach((l) => f.push(pt(...cellToLonLat(l.cell.lat, l.cell.lon), { kind: "loss", count: l.deviceCount })));
+  state.demo = !!isDemo; setData("zone", { type: "FeatureCollection", features: f });
+  state.count.zone = f.length; state.loaded.zone = true;
+  const row = document.querySelector('[data-zone-sub]'); if (row) row.textContent = isDemo ? "DEMO SNAPSHOT — drop a real thezone-eoc.json" : "Live snapshot · " + new Date(data.generatedAt).toLocaleTimeString();
+  updateCounters();
+}
+const DEMO = { generatedAt: Date.now(), reports: [
+  { cell: { lat: 2, lon: -1 }, severity: 11 }, { cell: { lat: 2, lon: -1 }, severity: 9 }, { cell: { lat: 2, lon: -1 }, severity: 10 },
+  { cell: { lat: 3, lon: 2 }, severity: 7 }, { cell: { lat: 5, lon: 5 }, severity: 3 }], cellLosses: [{ cell: { lat: -1, lon: 1 }, deviceCount: 12 }] };
+["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault()));
+document.addEventListener("drop", (e) => { e.preventDefault(); const f = e.dataTransfer.files[0];
+  if (f) f.text().then((t) => { try { ingestZone(JSON.parse(t), false); } catch (err) { /* not a Zone export */ } }); });
+function startLive(src) { let last = 0;
+  const tick = async () => { try { const d = await getJSON(src + "?_=" + Date.now(), 8000); if (d.generatedAt !== last) { last = d.generatedAt; ingestZone(d, false); } } catch (e) { /* keep polling */ } };
+  tick(); setInterval(tick, 4000); }
+
+/* ------------------------------------------------------------- day / night */
+function nightPolygon(date) {
+  const R = Math.PI / 180, d = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const L = (280.460 + 0.9856474 * d) % 360, g = (357.528 + 0.9856003 * d) % 360;
+  const lam = L + 1.915 * Math.sin(g * R) + 0.020 * Math.sin(2 * g * R), eps = 23.439 - 0.0000004 * d;
+  const decl = Math.asin(Math.sin(eps * R) * Math.sin(lam * R));
+  const ra = Math.atan2(Math.cos(eps * R) * Math.sin(lam * R), Math.cos(lam * R)) / R;
+  const gmst = ((18.697374558 + 24.06570982441908 * d) % 24 + 24) % 24;
+  let sunLon = ra - gmst * 15; sunLon = ((sunLon + 540) % 360) - 180;
+  const dd = Math.abs(decl) < 1e-4 ? 1e-4 : decl, ring = [];
+  for (let lon = -180; lon <= 180; lon += 3) { const H = (lon - sunLon) * R; ring.push([lon, Math.atan(-Math.cos(H) / Math.tan(dd)) / R]); }
+  const pole = dd > 0 ? -90 : 90; ring.push([180, pole], [-180, pole], ring[0]);
+  return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } }] };
+}
+function updateNight() { setData("night", nightPolygon(new Date())); state.count.night = 1; }
+
+/* ---------------------------------------------------------------- readout */
+const geoCache = new Map(); let geoTimer = 0;
+function updateLocation() {
+  clearTimeout(geoTimer);
+  geoTimer = setTimeout(async () => {
+    const c = map.getCenter(), z = map.getZoom();
+    if (z < 3.2) { $("r-loc").textContent = "—"; return; }
+    const key = c.lat.toFixed(2) + "," + c.lng.toFixed(2);
+    if (!geoCache.has(key)) {
+      try { const d = await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lng}&localityLanguage=en`, 6000);
+        const parts = [d.city || d.locality, d.principalSubdivision, d.countryName].filter(Boolean);
+        geoCache.set(key, [...new Set(parts)].join(", ") || "Open water"); } catch (e) { return; }
+    }
+    $("r-loc").textContent = geoCache.get(key);
+  }, 650);
+}
+map.on("move", () => { $("r-zoom").textContent = map.getZoom().toFixed(1); });
+map.on("zoomend", syncTerrain);
+map.on("moveend", updateLocation);
+setInterval(() => { $("zulu").textContent = new Date().toISOString().slice(11, 19) + "Z"; }, 1000);
+$("zulu").textContent = new Date().toISOString().slice(11, 19) + "Z";
+
+/* --------------------------------------------------------------- UI wiring */
+function buildUI() {
+  const rail = $("rail"), panel = $("layers");
+  rail.innerHTML = `<button class="rbtn" id="btn-layers" type="button" title="Layers (L)" aria-label="Layers list">${svg("layers")}</button><div class="rsep"></div>`;
+  panel.innerHTML = `<h3>Layers</h3><p class="lead">Toggle what you see. Every feed is official or open data.</p>`;
+  LAYERS.forEach((l) => {
+    const b = document.createElement("button"); b.className = "rbtn"; b.type = "button"; b.dataset.layer = l.id; b.title = l.name + " — " + l.sub;
+    b.style.setProperty("--c", l.color); b.setAttribute("aria-label", l.name); b.innerHTML = svg(l.icon) + '<span class="bd"></span>';
+    b.onclick = () => { state.on[l.id] = !state.on[l.id]; applyLayerVisibility(); };
+    rail.appendChild(b);
+
+    const row = document.createElement("div"); row.className = "lrow";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.dataset.layer = l.id; cb.checked = state.on[l.id]; cb.id = "cb-" + l.id;
+    cb.onchange = () => { state.on[l.id] = cb.checked; applyLayerVisibility(); };
+    const nm = document.createElement("label"); nm.className = "nm"; nm.htmlFor = cb.id; nm.textContent = l.name;
+    const ct = document.createElement("span"); ct.className = "ct"; ct.dataset.ct = l.id; ct.textContent = "–";
+    const sb = document.createElement("div"); sb.className = "sb"; sb.textContent = l.sub + " — " + l.note;
+    row.append(cb, nm, ct, sb);
+    if (l.id === "zone") { const s = document.createElement("div"); s.className = "sb"; s.dataset.zoneSub = ""; s.style.color = "var(--amber)"; s.textContent = "DEMO SNAPSHOT — drop a real thezone-eoc.json"; row.appendChild(s);
+      const go = document.createElement("button"); go.className = "go"; go.type = "button"; go.textContent = "Fly to Zone mesh"; go.onclick = () => map.flyTo({ center: [ORIGIN_LON, ORIGIN_LAT], zoom: 13, duration: 2200 }); row.appendChild(go); }
+    panel.appendChild(row);
+  });
+  $("btn-layers").onclick = () => panel.classList.toggle("open");
+  const info = document.createElement("button"); info.className = "rbtn"; info.type = "button"; info.title = "About this page"; info.setAttribute("aria-label", "About");
+  info.innerHTML = svg("info"); info.onclick = () => $("about").classList.add("open");
+  rail.append(Object.assign(document.createElement("div"), { className: "rsep" }), info);
+
+  document.querySelectorAll("#seg-mode button").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+  document.querySelectorAll("#seg-base button").forEach((b) => (b.onclick = () => setBase(b.dataset.base)));
+  $("btn-about").onclick = () => $("about").classList.add("open");
+  $("about-close").onclick = () => $("about").classList.remove("open");
+  $("about").addEventListener("click", (e) => { if (e.target === $("about")) $("about").classList.remove("open"); });
+
+  $("pad").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; const a = b.dataset.a;
+    if (a === "in") map.zoomIn(); else if (a === "out") map.zoomOut();
+    else if (a === "north") resetView(); else if (a === "full") toggleFull();
+    else if (a === "tilt") map.easeTo({ pitch: map.getPitch() > 20 ? 0 : 60, duration: 500 });
+    else { const d = { up: [0, -160], down: [0, 160], left: [-160, 0], right: [160, 0] }[a]; if (d) map.panBy(d, { duration: 300 }); } });
+}
+function toggleFull() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); }
+addEventListener("keydown", (e) => {
+  if (e.target.matches("input,textarea")) return; const k = e.key.toLowerCase();
+  if (k === "f") toggleFull(); else if (k === "r") resetView(); else if (k === "h") goHome();
+  else if (k === "l") $("layers").classList.toggle("open"); else if (k === "?") $("about").classList.add("open");
+  else if (k === "escape") { $("about").classList.remove("open"); $("layers").classList.remove("open"); closeCam(); }
+});
+addEventListener("online", setStatus); addEventListener("offline", setStatus);
+
+/* ------------------------------------------------------------------- boot */
+buildUI();
+map.on("load", () => {
+  addIcons(); addBaseLayers(); addDataLayers();
+  if (qs.get("mode") === "2d") setMode("2d");
+  setBase(qs.get("base") === "sat" ? "sat" : "map");
+  applyLayerVisibility(); updateNight(); setInterval(updateNight, 60000);
+  const lat = parseFloat(qs.get("lat")), lon = parseFloat(qs.get("lon")), z = parseFloat(qs.get("z"));
+  if (isFinite(lat) && isFinite(lon)) map.jumpTo({ center: [lon, lat], zoom: isFinite(z) ? z : 10, pitch: parseFloat(qs.get("pitch")) || 0, bearing: parseFloat(qs.get("bearing")) || 0 });
+  ingestZone(DEMO, true);
+  if (qs.get("live")) startLive(qs.get("live"));
+  loadQuakes(); loadEonet(); loadGdacs(); loadFires(); loadCams(); loadTicker();
+  $("r-zoom").textContent = map.getZoom().toFixed(1); updateLocation(); setStatus();
+});
 </script>
+</body>
+</html>
