@@ -2,187 +2,356 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05090d">
 <title>Zone — offline disaster mesh</title>
 <meta name="description" content="A phone network that keeps working when every tower is down. Phones relay a 31-byte distress signal hand to hand, out of the zone.">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
   :root{
     color-scheme: dark;
-    --ink:#070a0d; --ink-soft:#10161c; --ink-raise:#161e26; --ink-line:#223038;
-    --bone:#ede8da; --bone-dim:#7c8792; --bone-faint:#49555f;
-    --signal:#1be7c4;
-    --calm:#2e7d8a; --amber:#f2a93b; --alarm:#ef5b32;
+    --ink:#05090d; --ink-soft:#0c1319; --ink-raise:#121b23; --line:#1f2e37; --line-hi:#2f4653;
+    --bone:#ece7d8; --dim:#93a0aa; --faint:#5b6873;
+    --signal:#1be7c4; --amber:#f2a93b; --alarm:#ef5b32;
     --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --gut:20px;
   }
   *{box-sizing:border-box}
-  html,body{margin:0}
-  body{background:var(--ink);color:var(--bone);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
-  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 64px}
-  a{color:var(--signal);text-decoration:none}
-  a:hover{text-decoration:underline}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--ink);color:var(--bone);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;
+    padding-bottom:calc(84px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent}
+  a{color:inherit}
+  .wrap{max-width:960px;margin:0 auto;padding:0 var(--gut)}
+  .eyebrow{font:600 11px/1.4 var(--mono);letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+  h1,h2,h3{text-wrap:balance;margin:0}
+  h2{font:700 26px/1.15 var(--sans);letter-spacing:-.01em}
+  section{padding:56px 0 0}
+  .sec-head{display:flex;flex-direction:column;gap:10px;margin-bottom:22px}
+  .sec-head p{margin:0;color:var(--dim);max-width:60ch}
 
-  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.24em;color:var(--bone-dim);text-transform:uppercase}
-  h1{font:700 40px/1.1 var(--sans);letter-spacing:-.01em;margin:14px 0 0;text-wrap:balance}
-  h1 b{color:var(--signal)}
-  .lead{font-size:19px;color:var(--bone);margin:16px 0 0;max-width:60ch}
-  .oneline{font-size:15px;color:var(--bone-dim);margin:10px 0 0;max-width:64ch}
+  /* ---------- top bar ---------- */
+  .bar{position:sticky;top:0;z-index:20;background:rgba(5,9,13,.86);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
+  .bar .wrap{display:flex;align-items:center;justify-content:space-between;height:54px}
+  .logo{display:flex;align-items:center;gap:10px;text-decoration:none;font:700 17px/1 var(--mono);letter-spacing:.3em}
+  .logo b{color:var(--signal)}
+  .logo svg{width:28px;height:28px}
+  .bar nav{display:flex;gap:6px}
+  .bar nav a{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;text-decoration:none;color:var(--dim);
+    padding:10px 10px;border-radius:8px}
+  .bar nav a:hover{color:var(--bone)}
+  .bar nav a.live{color:var(--signal);border:1px solid var(--line-hi)}
+  @media (max-width:520px){.bar nav a.hide-s{display:none}}
 
-  .cta{display:flex;gap:12px;flex-wrap:wrap;margin:28px 0 6px}
-  .btn{
-    display:inline-flex;align-items:center;gap:9px;
-    font:700 15px/1 var(--sans);padding:15px 20px;border-radius:11px;cursor:pointer;
-    border:1px solid transparent;
+  /* ---------- hero ---------- */
+  .hero{position:relative;padding:36px 0 8px;overflow:hidden}
+  .hero .sonar{position:absolute;right:-140px;top:-40px;width:420px;height:420px;opacity:.55;pointer-events:none;z-index:0}
+  .hero .wrap{position:relative;z-index:1}
+  h1{font:700 40px/1.06 var(--sans);letter-spacing:-.02em;margin:16px 0 0}
+  h1 em{font-style:normal;color:var(--signal)}
+  .lead{font-size:18px;line-height:1.55;color:var(--bone);margin:18px 0 0;max-width:34em}
+  .lead-2{color:var(--dim);font-size:15px;margin:12px 0 0;max-width:36em}
+  .cta{display:flex;flex-direction:column;gap:10px;margin:26px 0 0;max-width:460px}
+  .btn{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:0 18px;border-radius:14px;
+    font:700 16px/1.2 var(--sans);text-decoration:none;border:1px solid var(--line-hi);background:var(--ink-soft);color:var(--bone);cursor:pointer}
+  .btn:active{transform:scale(.99)}
+  .btn:focus-visible,.bar a:focus-visible,summary:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  .btn small{display:block;font:500 12px/1.3 var(--mono);opacity:.75;margin-top:3px;letter-spacing:.02em}
+  .btn.primary{background:var(--signal);color:#031310;border-color:var(--signal)}
+  .btn.disabled{color:var(--dim);cursor:pointer}
+  .btn svg{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .btn .t{display:block}
+  .note{font:500 12.5px/1.6 var(--mono);color:var(--faint);margin:14px 0 0;max-width:46em}
+
+  /* ---------- silence strip: the USP, drawn ---------- */
+  .strip{margin:34px 0 0;border:1px solid var(--line);border-radius:16px;background:var(--ink-soft);padding:16px 14px 14px}
+  .strip .cap{display:flex;justify-content:space-between;gap:10px;font:600 10.5px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .strip .cap span:last-child{color:var(--alarm)}
+  .beats{display:grid;grid-template-columns:repeat(12,1fr);gap:6px;margin:16px 0 12px}
+  .beat{aspect-ratio:1;border-radius:50%;background:var(--signal);opacity:.9}
+  .beat.gap{background:transparent;border:1.5px dashed var(--alarm);opacity:1;animation:blink 1.6s steps(2,jump-none) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .strip p{margin:0;font-size:14px;color:var(--dim)}
+  .strip p b{color:var(--bone);font-weight:600}
+
+  /* ---------- two phases ---------- */
+  .phases{display:grid;gap:12px}
+  .phase{border:1px solid var(--line);border-radius:16px;background:var(--ink-soft);padding:20px}
+  .phase .tag{display:inline-block;font:700 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;padding:6px 9px;border-radius:6px;margin-bottom:12px}
+  .phase.p1 .tag{color:var(--amber);border:1px solid #6b5a2a}
+  .phase.p2{border-color:#1c5e54;background:linear-gradient(180deg,#0b1a19,var(--ink-soft) 60%)}
+  .phase.p2 .tag{color:var(--signal);border:1px solid #1c5e54}
+  .phase h3{font:700 19px/1.25 var(--sans);margin-bottom:8px}
+  .phase p{margin:0 0 14px;color:var(--dim);font-size:15px}
+  .phase .btn{min-height:48px;font-size:15px}
+
+  /* ---------- roles: swipe on phone ---------- */
+  .roles{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 calc(var(--gut) * -1);padding:2px var(--gut) 12px;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .roles::-webkit-scrollbar{display:none}
+  .role{flex:0 0 82%;scroll-snap-align:center;border:1px solid var(--line);border-radius:16px;background:var(--ink-soft);padding:20px;
+    display:flex;flex-direction:column;gap:12px}
+  .role .ic{width:46px;height:46px;border:1px solid var(--line-hi);border-radius:12px;display:grid;place-items:center;color:var(--signal)}
+  .role .ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .role h3{font:700 20px/1.2 var(--sans)}
+  .role p{margin:0;color:var(--dim);font-size:15px}
+  .role .who{font:600 10.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+  .swipe{font:500 11.5px/1 var(--mono);color:var(--faint);letter-spacing:.06em;margin:2px 0 0}
+
+  /* ---------- before / after ---------- */
+  .pairs{display:flex;flex-direction:column;gap:10px}
+  .pair{border:1px solid var(--line);border-radius:14px;background:var(--ink-soft);padding:16px;display:grid;gap:8px}
+  .pair .a{font-size:14px;color:var(--faint);text-decoration:line-through;text-decoration-color:#43515b}
+  .pair .b{font-size:16px;font-weight:600;line-height:1.4}
+  .pair.hero-pair{border-color:#7a2d1c;background:linear-gradient(180deg,#1a0e0b,var(--ink-soft) 70%)}
+  .pair.hero-pair .b{color:#ffb39f}
+  .pair .k{font:700 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--alarm)}
+
+  /* ---------- USP ---------- */
+  .usp{border:1px solid var(--line);border-radius:16px;background:var(--ink-raise);padding:22px 20px;display:grid;gap:14px}
+  .usp .big{font:700 24px/1.2 var(--sans);text-wrap:balance}
+  .usp .big span{color:var(--signal)}
+  .usp p{margin:0;color:var(--dim);font-size:15px}
+  .usp p b{color:var(--bone);font-weight:600}
+
+  /* ---------- limitations: accordion ---------- */
+  details{border:1px solid var(--line);border-radius:14px;background:var(--ink-soft)}
+  details+details{margin-top:8px}
+  summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:56px;padding:12px 16px;font-weight:600;font-size:15px}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";font:500 22px/1 var(--mono);color:var(--dim)}
+  details[open] summary::after{content:"–"}
+  details p{margin:0;padding:0 16px 16px;color:var(--dim);font-size:14.5px}
+
+  footer{margin-top:64px;padding:22px 0 8px;border-top:1px solid var(--line);font:500 12.5px/1.7 var(--mono);color:var(--faint)}
+  footer a{color:var(--dim)}
+
+  /* ---------- sticky install bar (phones) ---------- */
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:30;padding:10px var(--gut) calc(10px + env(safe-area-inset-bottom));
+    background:rgba(5,9,13,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;gap:10px}
+  .dock .btn{min-height:50px;font-size:15px;flex:1;justify-content:center}
+  .dock .btn.ghost{flex:0 0 auto;padding:0 16px}
+  .dock .btn small{display:none}
+
+  /* ---------- wider screens ---------- */
+  @media (min-width:700px){
+    :root{--gut:32px}
+    h1{font-size:60px} h2{font-size:32px} .lead{font-size:21px}
+    .hero{padding-top:64px} .hero .sonar{right:-40px;width:560px;height:560px;top:-60px}
+    .cta{flex-direction:row;flex-wrap:wrap;max-width:none}
+    .cta .btn{min-width:250px}
+    .phases{grid-template-columns:1fr 1fr}
+    .roles{margin:0;padding:2px 0 8px;overflow:visible;flex-wrap:nowrap}
+    .role{flex:1 1 0}
+    .swipe{display:none}
+    .pairs{display:grid;grid-template-columns:1fr 1fr}
+    .pair.hero-pair{grid-column:1 / -1}
+    .dock{display:none}
+    body{padding-bottom:0}
   }
-  .btn.primary{background:var(--signal);color:var(--ink)}
-  .btn.ghost{background:var(--ink-soft);color:var(--bone);border-color:var(--ink-line)}
-  .btn.disabled{background:var(--ink-soft);color:var(--bone-faint);border-color:var(--ink-line);cursor:default}
-  .btn small{font:500 12px/1 var(--mono);opacity:.8}
-  .note{font:500 13px/1.5 var(--mono);color:var(--bone-faint);margin-top:10px}
-
-  section{margin-top:52px}
-  h2{font:700 13px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--bone-dim);margin:0 0 16px}
-  .modes{display:grid;grid-template-columns:1fr;gap:12px}
-  @media(min-width:620px){.modes{grid-template-columns:repeat(3,1fr)}}
-  .mode{background:var(--ink-soft);border:1px solid var(--ink-line);border-radius:12px;padding:15px}
-  .mode h3{font:700 15px/1 var(--sans);margin:0 0 6px;color:var(--signal)}
-  .mode p{font-size:13px;color:var(--bone-dim);margin:0}
-
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--ink-line);vertical-align:top}
-  th{font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--bone-dim)}
-  td:first-child{color:var(--bone-dim);width:44%}
-  td b{color:var(--bone);font-weight:600}
-
-  .usp{background:var(--ink-raise);border-left:3px solid var(--signal);border-radius:0 12px 12px 0;padding:18px 20px}
-  .usp p{margin:0}
-  .usp p+p{margin-top:12px;color:var(--bone-dim);font-size:14px}
-  .usp .k{color:var(--signal);font-weight:700}
-
-  ul.lim{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
-  ul.lim li{font-size:14px;color:var(--bone-dim)}
-  ul.lim b{color:var(--bone);font-weight:600}
-
-  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--ink-line);font:500 13px/1.6 var(--mono);color:var(--bone-faint)}
-  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <div class="eyebrow">Ground-Zero Communication Blackout · Post-Disaster Information Fog</div>
-  <h1><b>Zone</b> — a phone network that survives when everything else is gone</h1>
-  <p class="lead">
-    Towers down, no signal, no internet. Phones talk straight to each other over Bluetooth.
-    A trapped person's phone broadcasts a 31-byte distress packet; any phone in range copies it and
-    carries it. The signal walks out of the disaster zone in someone's pocket.
-  </p>
-  <p class="oneline">
-    Collection with no network. Fusion with no ground truth. Same broken wire, two ends.
-  </p>
-
-  <div class="cta">
-    <a class="btn primary" id="get" href="/zone.apk" download>
-      Get the app <small>Android · ~8&nbsp;MB</small>
+<header class="bar">
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="Zone home">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke="#1be7c4" stroke-width="1.6">
+        <circle cx="20" cy="20" r="17" opacity=".35"/><circle cx="20" cy="20" r="11" opacity=".6"/><circle cx="20" cy="20" r="5"/>
+        <path d="M20 20 34 9" stroke-linecap="round"/></g><circle cx="20" cy="20" r="2.2" fill="#1be7c4"/></svg>
+      <span><b>Z</b>ONE</span>
     </a>
-    <a class="btn ghost" href="/viewer.html">
-      Open the EOC viewer <small>runs in the browser</small>
-    </a>
-    <a class="btn ghost" href="/dashboard.html">
-      Open the command dashboard <small>online · 3D map + open hazard feeds</small>
-    </a>
+    <nav aria-label="Sections">
+      <a class="hide-s" href="#how">How it works</a>
+      <a class="hide-s" href="#limits">Limits</a>
+      <a class="live" href="/dashboard.html">Live map</a>
+    </nav>
   </div>
-  <p class="note" id="installnote">
-    Android: tap the file, allow “install from this source” once. &nbsp;·&nbsp;
-    The viewer needs no install — it opens with a demo snapshot. &nbsp;·&nbsp;
-    The dashboard is the one page here that needs a connection — it's for a
-    command centre, not the blackout itself.
-  </p>
+</header>
 
-  <section>
-    <h2>One app, three roles</h2>
-    <div class="modes">
-      <div class="mode">
-        <h3>Citizen</h3>
-        <p>The trapped or stranded person. No menus, no login — it broadcasts even if the phone is
-        buried or they're unconscious. Shows one line: “3 devices are carrying your signal.”</p>
+<main id="top">
+  <div class="hero">
+    <svg class="sonar" viewBox="0 0 400 400" aria-hidden="true">
+      <g fill="none" stroke="#1be7c4" stroke-width="1">
+        <circle cx="200" cy="200" r="60" opacity=".5"/><circle cx="200" cy="200" r="110" opacity=".35"/>
+        <circle cx="200" cy="200" r="160" opacity=".22"/><circle cx="200" cy="200" r="198" opacity=".12"/>
+        <path d="M200 2v396M2 200h396" opacity=".12"/>
+      </g>
+      <circle cx="200" cy="200" r="4" fill="#1be7c4"/><circle cx="262" cy="150" r="3.5" fill="#1be7c4" opacity=".8"/>
+      <circle cx="120" cy="262" r="3.5" fill="#1be7c4" opacity=".8"/>
+      <circle cx="290" cy="270" r="9" fill="none" stroke="#ef5b32" stroke-width="1.6" stroke-dasharray="3 3"/>
+    </svg>
+    <div class="wrap">
+      <div class="eyebrow">Post-disaster communication blackout</div>
+      <h1>The network is gone. <em>Phones still talk.</em></h1>
+      <p class="lead">When towers fall and the internet dies, Zone phones pass a tiny distress signal from hand to hand over Bluetooth, until it walks out of the disaster zone in someone's pocket.</p>
+      <p class="lead-2">And when a whole cluster of phones goes quiet at once, Zone tells you exactly when, and where.</p>
+
+      <div class="cta">
+        <a class="btn primary" id="get" href="/zone.apk" download>
+          <span class="t">Get the app<small>Android · 7 MB · free</small></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>
+        </a>
+        <a class="btn" href="/dashboard.html">
+          <span class="t">Open the live map<small>online · satellite, quakes, fires, cameras</small></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+        </a>
+        <a class="btn" href="/viewer.html">
+          <span class="t">Try the control-room view<small>runs in your browser · demo data</small></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 12h17M12 5v14"/></svg>
+        </a>
       </div>
-      <div class="mode">
-        <h3>Responder</h3>
-        <p>The rescuer at the edge. A triage-ranked list of who's been heard, and a Dig&nbsp;Here
-        proximity bar — closer to a metal detector than a map.</p>
+      <p class="note" id="installnote">Android: tap the downloaded file and allow “install from this source” once. The live map needs a connection. It is for a control room, not for the blackout itself.</p>
+
+      <div class="strip" aria-label="Diagram: a phone that stops reporting">
+        <div class="cap"><span>One phone · heartbeat</span><span>Missed 3 in a row</span></div>
+        <div class="beats" aria-hidden="true">
+          <i class="beat"></i><i class="beat"></i><i class="beat"></i><i class="beat"></i><i class="beat"></i><i class="beat"></i>
+          <i class="beat"></i><i class="beat"></i><i class="beat gap"></i><i class="beat gap"></i><i class="beat gap"></i><i class="beat gap"></i>
+        </div>
+        <p><b>Silence is the signal.</b> Every packet says when the phone will speak next. When it doesn't, we know something happened, and when.</p>
       </div>
-      <div class="mode">
-        <h3>Map / EOC</h3>
-        <p>The control room. A severity grid showing which areas are hit how hard — and which ones
-        went completely dark, with the minute it happened.</p>
+    </div>
+  </div>
+
+  <section id="phases">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Two halves of one product</div>
+        <h2>See it coming. Then keep seeing when it hits.</h2>
+      </div>
+      <div class="phases">
+        <div class="phase p1">
+          <span class="tag">Phase 1 · online</span>
+          <h3>Watch the world while the network is up</h3>
+          <p>A live map for a control room: satellite imagery, earthquakes, fires, disaster alerts and public traffic cameras, all from open data.</p>
+          <a class="btn" href="/dashboard.html"><span class="t">Open the live map</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></a>
+        </div>
+        <div class="phase p2">
+          <span class="tag">Phase 2 · offline · the product</span>
+          <h3>Keep the picture when everything else goes dark</h3>
+          <p>No towers, no internet, no servers. Phones relay 31-byte signals over Bluetooth and the map keeps building itself.</p>
+          <a class="btn primary" href="/zone.apk" download><span class="t">Get the app</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+        </div>
       </div>
     </div>
   </section>
 
-  <section>
-    <h2>What it answers</h2>
-    <table>
-      <tr><th>Without it</th><th>With it</th></tr>
-      <tr><td>Trapped people can't call for help — no signal</td><td><b>Their phone reports itself, hands-free</b></td></tr>
-      <tr><td>Rescuers have no idea where survivors are</td><td>A live list builds at the perimeter</td></tr>
-      <tr><td>Can't tell someone drowning on a roof from someone crushed in a basement</td><td>Barometer says which — ±1–2&nbsp;m, works where GPS is dead</td></tr>
-      <tr><td>Reports are fragmented and contradictory</td><td>Confidence scoring — a lone panicking phone is a ghost, three that agree are a signal</td></tr>
-      <tr><td><b>Can't tell a flattened village from a merely flooded one</b></td><td><b>CELL_LOSS — a cluster all going silent together means the area was destroyed, at a known minute</b></td></tr>
-      <tr><td>Phones die in hours</td><td>Battery-adaptive — days of honest heartbeats, not hours</td></tr>
-    </table>
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">One app, three roles</div>
+        <h2>Pick your role once. The app does the rest.</h2>
+      </div>
+      <div class="roles" tabindex="0" aria-label="Three roles, swipe sideways">
+        <article class="role">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM5 21c0-4 3-7 7-7s7 3 7 7"/></svg></div>
+          <span class="who">The trapped or stranded</span>
+          <h3>Citizen</h3>
+          <p>No menus, no login. It keeps broadcasting even if the phone is buried or the person is unconscious. It shows one line: “3 devices carried your signal.”</p>
+        </article>
+        <article class="role">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></div>
+          <span class="who">The rescuer at the edge</span>
+          <h3>Responder</h3>
+          <p>A ranked list of who has been heard, and a Dig Here bar that fills as you get closer. Built for one hand and gloves.</p>
+        </article>
+        <article class="role">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 12h17M12 5v14"/></svg></div>
+          <span class="who">The control room</span>
+          <h3>Map</h3>
+          <p>A severity grid showing which areas are hit hard and which went completely dark, with the minute it happened.</p>
+        </article>
+      </div>
+      <p class="swipe">Swipe for the next role →</p>
+    </div>
   </section>
 
-  <section>
-    <h2>Why nobody else has this</h2>
-    <div class="usp">
-      <p><span class="k">Silence is the signal.</span> Every packet declares when the device will next
-      transmit. So when a device goes quiet, the system knows whether that silence was expected —
-      a dying battery — or not. A phone at 70% that promised to speak in ten seconds and vanished at
-      three: something happened to it, and we know within one interval when.</p>
-      <p>Bridgefy, Briar, goTenna are messaging apps. Chat has no concept of an expected next
-      message, so silence there means nothing. This works because it's structured telemetry, not
-      messaging — the differentiator and the architecture are the same decision.</p>
+  <section id="answers">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">What changes</div>
+        <h2>The problems it takes off the table</h2>
+      </div>
+      <div class="pairs">
+        <div class="pair"><div class="a">Trapped people can’t call for help. No signal.</div><div class="b">Their phone reports itself, hands-free.</div></div>
+        <div class="pair"><div class="a">Rescuers don’t know where survivors are.</div><div class="b">A live list builds at the perimeter.</div></div>
+        <div class="pair"><div class="a">Can’t tell a roof from a basement.</div><div class="b">The barometer gives height to ±1–2 m, where GPS is dead.</div></div>
+        <div class="pair"><div class="a">Reports are fragmented and contradictory.</div><div class="b">One panicking phone is a ghost; three that agree are a signal.</div></div>
+        <div class="pair"><div class="a">Phones die in hours.</div><div class="b">Battery-aware: days of honest heartbeats.</div></div>
+        <div class="pair hero-pair"><span class="k">The one nobody else has</span>
+          <div class="a">Can’t tell a flattened village from a flooded one.</div>
+          <div class="b">CELL_LOSS: a cluster that goes silent together means the area was destroyed, at a known minute.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <div class="sec-head"><div class="eyebrow">Why nobody else has this</div></div>
+      <div class="usp">
+        <div class="big">Chat apps can’t notice silence. <span>Zone is built on it.</span></div>
+        <p>Every packet declares <b>when the device will next transmit</b>. A phone at 70% battery that promised to speak in ten seconds and vanished at three has had something happen to it, and we know within one interval when. A dying battery is expected. This is not.</p>
+        <p>Bridgefy, Briar and goTenna are messaging apps. Messaging has no idea of an expected next message. Zone is structured telemetry, so the differentiator and the architecture are the same decision.</p>
+      </div>
     </div>
   </section>
 
   <section id="limits">
-    <h2>Known limitations — stated, not hidden</h2>
-    <ul class="lim">
-      <li><b>iOS can't participate.</b> Apple restricts BLE advertising; Web Bluetooth gives browsers
-      the central role only. A real deployment needs an entitlement or a hardware beacon. Android only.</li>
-      <li><b>2.4&nbsp;GHz penetrates rubble badly.</b> The answer isn't magic penetration — a pinned
-      phone advertises for days at low duty cycle, and a rescuer walking the pile eventually gets
-      within ~10&nbsp;m. We turn “search this block” into “search this circle.”</li>
-      <li><b>Coded-PHY support is chipset-dependent.</b> It doesn't track price or release year, so the
-      radio runs dual-mode and falls back to 1M where extended advertising is missing.</li>
-      <li><b>The last mile is out of scope.</b> The responder's phone is the gateway. Even if it never
-      syncs, “47 signals in this building, 3 marked rising-water” is already the whole product.</li>
-    </ul>
+    <div class="wrap">
+      <div class="sec-head"><div class="eyebrow">Known limits</div><h2>Stated, not hidden</h2></div>
+      <details>
+        <summary>iPhone can’t join the mesh</summary>
+        <p>Apple restricts Bluetooth advertising, and browsers can only listen. A real deployment needs an entitlement or a cheap hardware beacon. Today it is Android only. The control-room view works anywhere.</p>
+      </details>
+      <details>
+        <summary>Bluetooth doesn’t pass through rubble well</summary>
+        <p>We don’t pretend otherwise. A pinned phone keeps advertising for days at low power, and a rescuer walking the pile eventually gets within about 10 m. That turns “search this block” into “search this circle.”</p>
+      </details>
+      <details>
+        <summary>Long-range mode depends on the phone’s chip</summary>
+        <p>Coded-PHY support doesn’t track price or release year. So the radio runs dual-mode and falls back to standard Bluetooth where long range is missing.</p>
+      </details>
+      <details>
+        <summary>The last mile is out of scope</summary>
+        <p>The responder’s phone is the gateway. Even if it never syncs, “47 signals in this building, 3 marked rising water” is already the whole product.</p>
+      </details>
+    </div>
   </section>
 
-  <footer>
-    Source: <a href="https://github.com/Arunodoy18/TheZone">github.com/Arunodoy18/TheZone</a><br>
-    The EOC viewer is read-only — a browser can be a Bluetooth central only, so field roles run native.
-  </footer>
+  <div class="wrap">
+    <footer>
+      Source: <a href="https://github.com/Arunodoy18/TheZone">github.com/Arunodoy18/TheZone</a><br>
+      The control-room view is read-only: a browser can listen over Bluetooth but not join the mesh, so field roles run in the app.
+    </footer>
+  </div>
+</main>
+
+<div class="dock" id="dock">
+  <a class="btn primary" id="get-dock" href="/zone.apk" download>Get the app</a>
+  <a class="btn ghost" href="/dashboard.html">Live map</a>
 </div>
 
 <script>
-  // iOS can't run the mesh — swap the download CTA
+  // iOS can't run the mesh — swap the download buttons for a pointer to the limits.
   var isIOS = /iPad|iPhone|iPod/.test(navigator.platform || "") ||
     (navigator.userAgent.includes("Mac") && "ontouchend" in document);
   if (isIOS) {
-    var b = document.getElementById("get");
-    b.className = "btn disabled";
-    b.removeAttribute("href");
-    b.removeAttribute("download");
-    b.innerHTML = 'iOS can’t join the mesh →';
-    b.style.cursor = "pointer";
-    b.onclick = function(){ document.getElementById("limits").scrollIntoView({behavior:"smooth"}); };
+    ["get", "get-dock"].forEach(function (id) {
+      var b = document.getElementById(id); if (!b) return;
+      b.classList.remove("primary"); b.classList.add("disabled");
+      b.removeAttribute("href"); b.removeAttribute("download");
+      var t = b.querySelector(".t"); (t || b).innerHTML = "iPhone can’t join the mesh →";
+      var s = b.querySelector("svg"); if (s) s.remove();
+      b.onclick = function () { document.getElementById("limits").scrollIntoView({ behavior: "smooth" }); };
+    });
     document.getElementById("installnote").textContent =
-      "On iPhone: Apple blocks the Bluetooth advertising this needs. Open the viewer instead — it works anywhere.";
+      "On iPhone: Apple blocks the Bluetooth advertising this needs. Open the live map or the control-room view instead. Both work in Safari.";
   }
 </script>
 </body>
