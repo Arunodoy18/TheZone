@@ -39,6 +39,11 @@ class BleForegroundService : Service() {
                 BluetoothAdapter.STATE_ON -> {
                     BluetoothNudge.clear(applicationContext)
                     postForeground(btOn = true)
+                    // BleTransport.start() bails out permanently if Bluetooth was
+                    // off at the time — toggling it back on (Airplane mode, an
+                    // OEM sleep mode, the user fumbling settings) otherwise leaves
+                    // the radio dead until the app is reopened by hand.
+                    TransportController.restartIfDown()
                 }
             }
         }
@@ -63,12 +68,14 @@ class BleForegroundService : Service() {
             TransportController.useBle(applicationContext)
         }
         TransportController.start(applicationContext)
+        ServiceState.setActive(applicationContext, true)
         return START_STICKY
     }
 
     override fun onDestroy() {
         if (btReceiverRegistered) runCatching { unregisterReceiver(btReceiver) }
         TransportController.stop()
+        ServiceState.setActive(applicationContext, false)
         super.onDestroy()
     }
 

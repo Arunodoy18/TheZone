@@ -312,6 +312,17 @@ object TransportController {
         ping()
     }
 
+    /**
+     * Nudge the active transport back on without redoing [start]'s persisted-state
+     * reload or resetting the relay pump — for a radio that died mid-session (e.g.
+     * [BleTransport] refuses to (re)start while Bluetooth is off, so toggling
+     * Bluetooth back on needs this rather than a full restart).
+     */
+    fun restartIfDown() {
+        transport?.start()
+        ping()
+    }
+
     fun stop() {
         pumpTask?.cancel(false)
         pumpTask = null
