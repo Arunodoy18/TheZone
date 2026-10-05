@@ -164,6 +164,49 @@ fun TransportDebugScreen() {
         }
         meshMsg?.let { KeyVal("last", it) }
 
+        Header("Responder signing key (ECDSA)")
+        Text(
+            "Closes the gap the shared responder key leaves open — that key alone " +
+                "lets anyone holding it forge a RESOLVE or ALERT. Generate this " +
+                "phone's own signing key, then send its device_id and public key to " +
+                "whoever maintains TrustRoster.PILOT (docs/RESPONDER_PROVISIONING.md) " +
+                "to actually provision it. Until it's added there, RESOLVE/ALERT trust " +
+                "still rests on the shared key alone, unchanged.",
+            fontSize = 12.sp,
+        )
+        var sigKeyTick by remember { mutableIntStateOf(0) }
+        val hasSigKey = remember(sigKeyTick) { com.thezone.identity.ResponderSigningKey.hasKey(context) }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                com.thezone.identity.ResponderSigningKey.ensureGenerated(context)
+                sigKeyTick++
+            }) { Text(if (hasSigKey) "Regenerate key" else "Generate signing key") }
+        }
+        if (hasSigKey) {
+            val signerDeviceIdHex = com.thezone.identity.ResponderSigningKey.deviceIdHex(context)
+            val pubKeyHex = com.thezone.identity.ResponderSigningKey.publicKeyRawPoint(context)
+                ?.joinToString("") { "%02x".format(it) } ?: "(unavailable)"
+            KeyVal("device_id", signerDeviceIdHex)
+            KeyVal("public key", pubKeyHex)
+            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    clipboard.setText(
+                        androidx.compose.ui.text.AnnotatedString(
+                            "RosterEntry(deviceIdHex = \"$signerDeviceIdHex\", publicKeyHex = \"$pubKeyHex\"),",
+                        ),
+                    )
+                }) { Text("Copy roster entry") }
+            }
+            KeyVal(
+                "verified signatures",
+                "${TransportController.verifiedSignatureCount} confirmed · " +
+                    "${TransportController.pendingSignatureFragments} awaiting fragments",
+            )
+        } else {
+            KeyVal("status", "no key on this phone yet")
+        }
+
         Header("CAP alert (government interop)")
         Text(
             "Common Alerting Protocol — the open format NDMA/SACHET and other " +

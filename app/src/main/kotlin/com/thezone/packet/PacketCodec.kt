@@ -388,4 +388,120 @@ object PacketCodec {
         val u = getUint16(b, off)
         return if (u >= 0x8000) u - 0x10000 else u
     }
+
+    // --- SIG (packet type 3) -----------------------------------------------
+    // A fragment of an ECDSA P-256 signature over another packet's content-id
+    // — see com.thezone.identity (EcdsaSignature, TrustRoster,
+    // ResponderSigningKey) and com.thezone.core.SignatureLog. Closes the gap
+    // the pre-shared responder key leaves open: anyone holding that one key
+    // can forge a RESOLVE or ALERT. A SIG fragment only means something once
+    // its signer's device_id is in TrustRoster.PILOT.
+    //
+    // A raw ECDSA signature is 64 fixed-width bytes (r || s) — more than fits
+    // in the 31-byte envelope alongside a linking reference, so it rides as 4
+    // fragments of 16 bytes each. The 31 bytes split as:
+    //
+    //   [0]      version_type (type = TYPE_SIG)
+    //   [1,7)    device_id — the signer
+    //   [7]      meta: high nibble = target packet type (1 RESOLVE / 2 ALERT),
+    //            low nibble = fragment index 0..3
+    //   [8,10)   target content-id prefix (2 bytes) — which RESOLVE/ALERT this
+    //            fragment signs; a coarse link, disambiguated further by
+    //            (signer, target type) — see SignatureLog.sweep
+    //   [15]     hop byte — same generic meaning as every other packet type
+    //            (relay-managed; contentId masks its low nibble). High nibble
+    //            unused.
+    //   [19,23)  the legacy `auth` field slot — unused here (trust comes from
+    //            the signature, not a MAC), filled with a nonzero placeholder
+    //            only to satisfy the generic "auth shape" relay check
+    //   everywhere else (18 bytes: [10,15), [16,19), [23,31)) — the 16-byte
+    //   signature chunk, written across those three windows in order
+    const val TYPE_SIG = 3
+    const val SIG_FRAGMENT_BYTES = 16
+    const val SIG_FRAGMENT_COUNT = 4 // 4 * 16 = 64-byte raw ECDSA signature
+    const val SIG_TARGET_PREFIX_BYTES = 2
+
+    private const val OFF_SIG_META = 7
+    private const val OFF_SIG_TARGET_PREFIX = 8
+
+    // (offset, length) windows the 16 chunk bytes are written across, in order —
+    // every packet byte except version/device_id/meta/target-prefix/hop/auth-slot.
+    private val SIG_CHUNK_WINDOWS = listOf(10 to 5, 16 to 3, 23 to 8)
+
+    private fun writeSigChunk(out: ByteArray, chunk: ByteArray) {
+        var pos = 0
+        for ((off, len) in SIG_CHUNK_WINDOWS) {
+            chunk.copyInto(out, off, pos, pos + len)
+            pos += len
+        }
+    }
+
+    private fun readSigChunk(bytes: ByteArray): ByteArray {
+        val out = ByteArray(SIG_FRAGMENT_BYTES)
+        var pos = 0
+        for ((off, len) in SIG_CHUNK_WINDOWS) {
+            bytes.copyInto(out, pos, off, off + len)
+            pos += len
+        }
+        return out
+    }
+
+    /**
+     * Build one fragment of a signature over [targetContentId] (32 bytes, i.e.
+     * [contentId] of the RESOLVE/ALERT being signed). [signatureChunk] is 16
+     * bytes: `rawSignature.copyOfRange(fragmentIndex * 16, fragmentIndex * 16 + 16)`.
+     */
+    fun buildSigFragment(
+        signerDeviceId: ByteArray,
+        targetType: Int,
+        targetContentId: ByteArray,
+        fragmentIndex: Int,
+        signatureChunk: ByteArray,
+    ): ByteArray {
+        require(signerDeviceId.size == Packet.DEVICE_ID_BYTES) { "signerDeviceId must be ${Packet.DEVICE_ID_BYTES} bytes" }
+        require(targetType == TYPE_RESOLVE || targetType == TYPE_ALERT) { "targetType must be RESOLVE or ALERT" }
+        require(targetContentId.size >= SIG_TARGET_PREFIX_BYTES) { "targetContentId too short" }
+        require(fragmentIndex in 0 until SIG_FRAGMENT_COUNT) { "fragmentIndex out of range" }
+        require(signatureChunk.size == SIG_FRAGMENT_BYTES) { "signatureChunk must be $SIG_FRAGMENT_BYTES bytes" }
+
+        val out = ByteArray(Packet.SIZE_BYTES)
+        out[OFF_VERSION_TYPE] = (((Packet.PROTOCOL_VERSION and 0x0F) shl 4) or (TYPE_SIG and 0x0F)).toByte()
+        signerDeviceId.copyInto(out, OFF_DEVICE_ID, 0, Packet.DEVICE_ID_BYTES)
+        val meta = (((targetType and 0x0F) shl 4) or (fragmentIndex and 0x0F)).toByte()
+        out[OFF_SIG_META] = meta
+        targetContentId.copyInto(out, OFF_SIG_TARGET_PREFIX, 0, SIG_TARGET_PREFIX_BYTES)
+        writeSigChunk(out, signatureChunk)
+        // auth[19,23) carries no MAC here — fill with the (always-nonzero) meta
+        // byte purely so the generic relay-layer auth-shape check passes.
+        for (i in 0 until 4) out[OFF_AUTH + i] = meta
+        return out
+    }
+
+    fun isSig(bytes: ByteArray): Boolean =
+        bytes.size == Packet.SIZE_BYTES && (bytes[OFF_VERSION_TYPE].toInt() and 0x0F) == TYPE_SIG
+
+    data class SigFragment(
+        val signerDeviceIdHex: String,
+        val targetType: Int,
+        val fragmentIndex: Int,
+        val targetContentIdPrefixHex: String,
+        val chunk: ByteArray,
+    )
+
+    fun decodeSigFragment(bytes: ByteArray): SigFragment? {
+        if (!isSig(bytes)) return null
+        val meta = bytes[OFF_SIG_META].toInt() and 0xFF
+        val targetType = (meta ushr 4) and 0x0F
+        if (targetType != TYPE_RESOLVE && targetType != TYPE_ALERT) return null
+        return SigFragment(
+            signerDeviceIdHex = bytes.copyOfRange(OFF_DEVICE_ID, OFF_DEVICE_ID + Packet.DEVICE_ID_BYTES)
+                .joinToString("") { "%02x".format(it) },
+            targetType = targetType,
+            fragmentIndex = meta and 0x0F,
+            targetContentIdPrefixHex = bytes
+                .copyOfRange(OFF_SIG_TARGET_PREFIX, OFF_SIG_TARGET_PREFIX + SIG_TARGET_PREFIX_BYTES)
+                .joinToString("") { "%02x".format(it) },
+            chunk = readSigChunk(bytes),
+        )
+    }
 }

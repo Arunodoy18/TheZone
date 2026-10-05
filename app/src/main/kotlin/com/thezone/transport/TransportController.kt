@@ -47,6 +47,14 @@ object TransportController {
     private val resolveLog = ResolveLog()
     private val alertLog = AlertLog()
 
+    // ECDSA signature machinery (docs/PACKET_SPEC.md "SIG" packet type) — an
+    // additional, stronger trust signal on top of the legacy shared-key MAC
+    // that still gates RESOLVE/ALERT. Kept in its own tiny ReportStore so a SIG
+    // fragment never touches silence tracking, triage, or the map — see
+    // PacketCodec's TYPE_SIG doc comment and SignatureLog's.
+    private val sigStore = ReportStore(maxReports = 128)
+    private val signatureLog = com.thezone.core.SignatureLog()
+
     private val pump = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "relay-pump").apply { isDaemon = true }
     }
@@ -313,6 +321,39 @@ object TransportController {
     }
 
     /**
+     * If this phone has a responder signing key (Debug -> "Responder signing
+     * key" -> Generate), sign [targetBytes] (a just-issued RESOLVE/ALERT) and
+     * queue the 4 SIG fragments for relay. A no-op — not an error — if the key
+     * doesn't exist yet: signing is additive on top of the existing shared-key
+     * MAC, never a precondition for issuing a RESOLVE/ALERT at all.
+     */
+    private fun signAndQueue(ctx: Context, targetType: Int, targetBytes: ByteArray) {
+        if (!com.thezone.identity.ResponderSigningKey.hasKey(ctx)) return
+        val digest = PacketCodec.contentId(targetBytes)
+        val signature = com.thezone.identity.ResponderSigningKey.sign(ctx, digest) ?: return
+        if (signature.size != com.thezone.identity.EcdsaSignature.RAW_SIGNATURE_BYTES) return
+        val signerId = DeviceKeyStore.identity(ctx).deviceId
+        for (i in 0 until PacketCodec.SIG_FRAGMENT_COUNT) {
+            val chunk = signature.copyOfRange(
+                i * PacketCodec.SIG_FRAGMENT_BYTES,
+                (i + 1) * PacketCodec.SIG_FRAGMENT_BYTES,
+            )
+            val fragment = PacketCodec.buildSigFragment(signerId, targetType, digest, i, chunk)
+            sigStore.accept(fragment, rssiDbm = 0)
+        }
+    }
+
+    /** True once a verified ECDSA signature (on top of the legacy shared-key MAC) backs this RESOLVE/ALERT. */
+    fun isSignatureVerified(contentIdHex: String): Boolean = signatureLog.isVerified(contentIdHex)
+
+    /** Whose signature verified it, hex device_id — for a future "verified by <label>" UI. */
+    fun signatureVerifiedBy(contentIdHex: String): String? = signatureLog.verifiedSigner(contentIdHex)
+
+    /** Diagnostics for the debug screen: fragments awaiting their other pieces / their target packet. */
+    val pendingSignatureFragments: Int get() = signatureLog.pendingCount
+    val verifiedSignatureCount: Int get() = signatureLog.verifiedCount
+
+    /**
      * Nudge the active transport back on without redoing [start]'s persisted-state
      * reload or resetting the relay pump — for a radio that died mid-session (e.g.
      * [BleTransport] refuses to (re)start while Bluetooth is off, so toggling
@@ -418,6 +459,7 @@ object TransportController {
             altTrend = com.thezone.sensors.Altitude.trendMeters,
         )
         store.accept(bytes, rssiDbm = 0)
+        signAndQueue(ctx, PacketCodec.TYPE_RESOLVE, bytes)
         resolveLog.add(contentId.copyOfRange(0, PacketCodec.RESOLVE_PREFIX_BYTES).toHex())
         t.advertise(bytes)
         lastAdvertisedHex = bytes.toHex()
@@ -507,6 +549,7 @@ object TransportController {
         )
         val rec = alertRecordFrom(bytes, now)
         store.accept(bytes, rssiDbm = 0)
+        signAndQueue(ctx, PacketCodec.TYPE_ALERT, bytes)
         alertLog.add(rec)
         t.advertise(bytes)
         lastAdvertisedHex = bytes.toHex()
@@ -633,6 +676,18 @@ object TransportController {
     }
 
     private fun ingest(inbound: InboundPacket) {
+        // SIG fragments (PacketCodec.TYPE_SIG) never enter the main store: they
+        // aren't a device heartbeat, and letting them reach silence tracking /
+        // triage / the map would put a phantom "device" (the signer) on the
+        // board with garbage position and status decoded from repurposed
+        // fields. They get their own tiny store purely for relay + dedup.
+        if (PacketCodec.isSig(inbound.bytes)) {
+            sigStore.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
+            signatureLog.ingest(inbound.bytes)
+            ping()
+            return
+        }
+
         val outcome = store.accept(inbound.bytes, inbound.rssi, inbound.receivedAtMillis)
         if (outcome == com.thezone.core.AcceptOutcome.NEW || outcome == com.thezone.core.AcceptOutcome.UPDATED) {
             dirty = true
@@ -744,14 +799,36 @@ object TransportController {
             }
             if (result.transitions.isNotEmpty() || result.newCellLosses.isNotEmpty()) dirty = true
 
+            // Try to complete + verify any SIG fragment sets that are now fully
+            // in hand — their target RESOLVE/ALERT may have arrived after them.
+            signatureLog.sweep { prefixHex, targetType ->
+                store.all().firstOrNull {
+                    it.packet.type == targetType &&
+                        PacketCodec.contentId(it.bytes).toHex().startsWith(prefixHex)
+                }?.bytes
+            }
+
             // Don't relay heartbeats for devices we locally believe are silent —
             // that would keep a dead device looking alive downstream.
+            // Sig fragments get their own turn on alternate relay ticks so they
+            // don't starve RESOLVE/ALERT/STATUS relay, but still propagate.
             val carried =
                 if (pumpTick % RELAY_EVERY_N_TICKS == 0L) {
-                    store.relayBatch(1) { dev ->
-                        when (silence.deviceState(dev)) {
-                            SilenceState.EXPECTED_SILENCE, SilenceState.UNEXPECTED_SILENCE -> false
-                            else -> true
+                    if ((pumpTick / RELAY_EVERY_N_TICKS) % 2 == 0L) {
+                        store.relayBatch(1) { dev ->
+                            when (silence.deviceState(dev)) {
+                                SilenceState.EXPECTED_SILENCE, SilenceState.UNEXPECTED_SILENCE -> false
+                                else -> true
+                            }
+                        }
+                    } else {
+                        sigStore.relayBatch(1) { true }.ifEmpty {
+                            store.relayBatch(1) { dev ->
+                                when (silence.deviceState(dev)) {
+                                    SilenceState.EXPECTED_SILENCE, SilenceState.UNEXPECTED_SILENCE -> false
+                                    else -> true
+                                }
+                            }
                         }
                     }
                 } else {
