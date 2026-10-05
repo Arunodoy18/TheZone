@@ -19,6 +19,8 @@ data class TriageEntry(
     val lastRssiDbm: Int,
     val silence: SilenceState,
     val unexpectedSinceMillis: Long?,
+    /** The reporter's own chosen phrase code, if any — see com.thezone.packet.StatusPhrases. */
+    val phraseCode: Int? = null,
 )
 
 /**

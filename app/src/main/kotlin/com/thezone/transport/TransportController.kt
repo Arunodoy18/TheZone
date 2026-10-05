@@ -156,10 +156,12 @@ object TransportController {
                 """{"lat":${com.thezone.packet.GeoPosition.toLat(r.packet.deltaLat, originLat)},""" +
                     """"lon":${com.thezone.packet.GeoPosition.toLon(r.packet.deltaLon, originLon)}}"""
             } else "null"
+            val phraseLabel = com.thezone.packet.StatusPhrases.label(PacketCodec.statusPhraseCode(r.bytes))
+            val phraseJson = if (phraseLabel != null) "\"${phraseLabel.replace("\"", "'")}\"" else "null"
             """{"deviceId":"$dev","cell":${cell(gc)},"pos":$pos,"severity":${r.packet.severity},""" +
                 """"status":${r.packet.status},"battery":${BatteryScale.nibbleToPercent(r.packet.batteryLevel)},""" +
                 """"hops":${r.hopsFromOrigin},"altDelta":${r.packet.altDelta},"altTrend":${r.packet.altTrend},""" +
-                """"silence":"$st","lastHeardMs":${now - r.lastHeardAtMillis}}"""
+                """"silence":"$st","lastHeardMs":${now - r.lastHeardAtMillis},"phrase":$phraseJson}"""
         }
         val cls = silence.cellLosses().joinToString(",") { l ->
             """{"cell":${cell(l.cell)},"deviceCount":${l.deviceCount},"silentCount":${l.silentCount},""" +
@@ -288,6 +290,7 @@ object TransportController {
                 lastRssiDbm = r.lastRssiDbm,
                 silence = s?.state ?: SilenceState.ALIVE,
                 unexpectedSinceMillis = s?.unexpectedSinceMillis,
+                phraseCode = PacketCodec.statusPhraseCode(r.bytes),
             )
         }
     }

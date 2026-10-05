@@ -169,6 +169,9 @@ private fun ResponderRow(
                 color = Zone.paperDim, fontSize = 14.sp,
             )
             Text(TriageScorer.reason(e, now).uppercase(), color = Zone.calm, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            com.thezone.packet.StatusPhrases.label(e.phraseCode)?.let {
+                Text("“$it”", color = Zone.paperInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            }
         }
         Spacer(Modifier.width(10.dp))
         SilenceBlock(e.silence)

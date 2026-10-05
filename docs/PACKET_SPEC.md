@@ -31,9 +31,26 @@ Manufacturer-specific data field. Company ID `0xFFFF` (demo-reserved). All multi
 | 18 | 1 | `alt_delta` | int8, relative altitude in metres vs this device's baseline, clamped ±127. `0x80` = no barometer |
 | 19 | 4 | `auth` | first 4 bytes of SHA-256(device_key ‖ payload[0..18]). Not real crypto — anti-spoofing at demo scale |
 | 23 | 1 | `alt_trend` | int8, metres change across the last 3 transmissions. Positive = climbing |
-| 24 | 7 | `reserved` | zero-filled in a STATUS packet. In a RESOLVE packet, the first 7 bytes of the resolved report's `content_id` |
+| 24 | 7 | `reserved` | `reserved[24]` optionally carries a STATUS phrase code (0 = none); `reserved[25,31)` stays zero-filled in a STATUS packet. In a RESOLVE packet, the first 7 bytes of the resolved report's `content_id` |
 
 Total: **31 bytes.**
+
+### STATUS phrase code
+
+`reserved[24]` on a STATUS packet (type 0) is an optional 1-byte code into a
+fixed, append-only phrase table (`com.thezone.packet.StatusPhrases`) — "Child
+with me", "Cannot walk", "Need water", and so on. 0 means "no phrase chosen",
+matching every STATUS packet encoded before this field existed, so it's a
+fully backward-compatible addition, not a layout change.
+
+This is deliberately **not free text.** A phrase code costs nothing extra to
+transmit or relay — it travels inside the one packet that's already going
+out. Free text was considered and rejected for the core packet: it would need
+its own linked follow-up packets (same mechanism as the SIG packet type),
+competing for the single advertising slot's airtime and measurably slowing
+propagation at the low end of the duty-cycle ladder, for a feature that
+would blur the product into a messaging app — which is explicitly not what
+the "silence is the signal" differentiator needs.
 
 ### Packet type 1 — RESOLVE
 

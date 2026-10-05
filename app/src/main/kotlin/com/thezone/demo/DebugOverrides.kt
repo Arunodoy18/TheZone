@@ -38,5 +38,14 @@ object SelfReport {
         set(value) {
             field = value.coerceIn(0, 15)
         }
+
+    /**
+     * One optional phrase from [com.thezone.packet.StatusPhrases], picked on the
+     * Citizen screen. Null = none (the packet's reserved[24] byte stays 0, exactly
+     * as every report before this field existed). 1 byte on the wire — not free
+     * text, see docs/PACKET_SPEC.md "STATUS phrase code".
+     */
+    @Volatile
+    var phraseCode: Int? = null
 }
 

@@ -42,11 +42,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.thezone.demo.DebugOverrides
+import com.thezone.demo.SelfReport
 import com.thezone.demo.UserStatus
 import com.thezone.packet.Status
+import com.thezone.packet.StatusPhrases
 import com.thezone.transport.TransportController
 import com.thezone.ui.theme.Zone
 
@@ -170,6 +174,8 @@ fun CitizenScreen() {
                 StatusButton(s.waterRising, Status.RISING_WATER.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
                 StatusButton(s.safe, Status.SAFE.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
             }
+            Spacer(Modifier.height(10.dp))
+            PhraseRow()
         }
 
         // hidden: long-press the bottom-left corner to cycle the fake battery level
@@ -211,6 +217,45 @@ private fun HeadcountRow(s: CitizenStrings) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StepBtn("–") { set(n - 1) }
             StepBtn("+") { set(n + 1) }
+        }
+    }
+}
+
+/**
+ * One optional tag, on top of the Trapped/Water-rising/Safe buttons above —
+ * "Child with me", "Cannot walk", etc. (com.thezone.packet.StatusPhrases).
+ * Deliberately a flat, thumb-scrollable strip of small chips, not a dominant
+ * element: CLAUDE.md's Citizen screen is "one headline and one number", so
+ * this stays a thin accessory row, same weight as the headcount stepper above
+ * it, not a second bank of big buttons competing with Trapped/Water/Safe.
+ */
+@Composable
+private fun PhraseRow() {
+    val view = LocalView.current
+    var code by remember { mutableStateOf(SelfReport.phraseCode) }
+    fun pick(c: Int) {
+        code = if (code == c) null else c
+        SelfReport.phraseCode = code
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(StatusPhrases.phrases.size) { i ->
+            val c = i + 1
+            val on = code == c
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (on) Zone.signal else Zone.inkSoft)
+                    .pointerInput(c) { detectTapGestures(onTap = { pick(c) }) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    StatusPhrases.phrases[i],
+                    color = if (on) Zone.ink else Zone.boneDim,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }

@@ -82,8 +82,13 @@ object HeartbeatSource {
             altDelta = Altitude.deltaByte,   // NO_BAROMETER when absent — never a false zero
             altTrend = Altitude.trendMeters,
         )
-        return PacketCodec.encode(packet, identity, authKey = responderKey)
-            .also { Altitude.markTransmitted() }
+        val encoded = PacketCodec.encode(packet, identity, authKey = responderKey)
+        // Every packet built above is TYPE_STATUS, so a chosen phrase always applies
+        // here — writing it after encode() is safe because auth only covers [0,19).
+        val withPhrase = com.thezone.demo.SelfReport.phraseCode
+            ?.let { PacketCodec.withStatusPhrase(encoded, it) }
+            ?: encoded
+        return withPhrase.also { Altitude.markTransmitted() }
     }
 
     /** docs/PACKET_SPEC.md "next_expected_tx" table. */

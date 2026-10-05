@@ -145,6 +145,31 @@ object PacketCodec {
     fun resolveTargetPrefix(bytes: ByteArray): ByteArray? =
         if (isResolve(bytes)) bytes.copyOfRange(OFF_RESERVED, OFF_RESERVED + RESOLVE_PREFIX_BYTES) else null
 
+    // --- STATUS phrase code --------------------------------------------
+    // A STATUS packet's reserved[24] byte (docs/PACKET_SPEC.md "reserved
+    // zero-filled in a STATUS packet") carries an optional fixed-phrase code —
+    // the same mechanism ALERT already uses for its phrase code, applied to an
+    // ordinary report. 0 = "no phrase chosen" (the existing default, so every
+    // STATUS packet ever encoded before this still decodes the same way).
+    // See com.thezone.packet.StatusPhrases for the table itself.
+
+    /** Returns a copy of [bytes] with reserved[24] set to [phraseCode] (1..255). Only meaningful on a STATUS packet. */
+    fun withStatusPhrase(bytes: ByteArray, phraseCode: Int): ByteArray {
+        require(bytes.size == Packet.SIZE_BYTES)
+        require(phraseCode in 1..255) { "phraseCode must be 1..255 (0 means 'none')" }
+        val out = bytes.copyOf()
+        out[OFF_RESERVED] = phraseCode.toByte()
+        return out
+    }
+
+    /** The chosen phrase code on a STATUS packet, or null if it's a different type or none was chosen. */
+    fun statusPhraseCode(bytes: ByteArray): Int? {
+        if (bytes.size != Packet.SIZE_BYTES) return null
+        if ((bytes[OFF_VERSION_TYPE].toInt() and 0x0F) != 0 /* TYPE_STATUS */) return null
+        val code = bytes[OFF_RESERVED].toInt() and 0xFF
+        return if (code == 0) null else code
+    }
+
     // --- ALERT (packet type 2) --------------------------------------------
     // A government-style emergency alert that floods the mesh. Same 31 bytes,
     // fields re-purposed: status = category (0..4), next_expected_tx = minutes the
