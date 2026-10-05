@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05090d">
+<title>Install Zone</title>
+<meta name="description" content="Scan to install the Zone app — for the demo floor.">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --ink:#05090d; --ink-soft:#0c1319; --line:#1f2e37; --line-hi:#2f4653;
+    --bone:#ece7d8; --dim:#93a0aa; --faint:#5b6873; --signal:#1be7c4;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100dvh;background:var(--ink);color:var(--bone);font:16px/1.5 var(--sans);
+    display:flex;align-items:center;justify-content:center;padding:32px 20px;-webkit-font-smoothing:antialiased}
+  .card{width:100%;max-width:440px;text-align:center}
+  .eyebrow{font:600 12px/1 var(--mono);letter-spacing:.22em;color:var(--dim);text-transform:uppercase;margin-bottom:14px}
+  h1{font:700 32px/1.15 var(--sans);letter-spacing:-.01em;margin:0 0 6px;text-wrap:balance}
+  h1 b{color:var(--signal)}
+  p.lead{color:var(--dim);font-size:15px;margin:0 0 26px}
+  .qr{background:#fff;border-radius:20px;padding:22px;display:inline-block;box-shadow:0 0 0 1px var(--line-hi)}
+  .qr img{display:block;width:260px;height:260px}
+  .link{margin-top:20px;font:600 14px/1.5 var(--mono);color:var(--signal);word-break:break-all}
+  .steps{text-align:left;margin:34px 0 0;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--ink-soft)}
+  .steps h2{font:700 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:0 0 14px}
+  .steps ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;font-size:14px;color:var(--bone)}
+  .steps li b{color:var(--signal)}
+  .note{margin-top:18px;font:500 12.5px/1.6 var(--mono);color:var(--faint)}
+  @media (min-width:640px){ .qr img{width:300px;height:300px} h1{font-size:38px} }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="eyebrow">Demo install</div>
+  <h1>Scan to install <b>Zone</b></h1>
+  <p class="lead">Open your phone's camera, point it at the code. Android only — see below for iPhone.</p>
+  <div class="qr"><img src="qr-install.png" alt="QR code to zone-thezone.vercel.app"></div>
+  <div class="link">zone-thezone.vercel.app</div>
+
+  <div class="steps">
+    <h2>Install steps</h2>
+    <ol>
+      <li>Scan the code, or open the link above. Tap <b>Get the app</b>.</li>
+      <li>Chrome downloads the file, then shows <b>"Install unknown apps?"</b> or
+        <b>"This type of file can harm your device."</b> Tap <b>Settings</b>,
+        turn on <b>Allow from this source</b>, then go back and tap the file again.
+        (Only asked once per phone.)</li>
+      <li>Tap <b>Install</b>, then <b>Open</b>. Pick a role — Citizen, Responder,
+        or Map — and allow Bluetooth + Location when asked.</li>
+    </ol>
+  </div>
+  <p class="note">iPhone can't run the mesh (Apple blocks the Bluetooth broadcast this
+    needs) — open the link in Safari instead for the live map and control-room view.</p>
+</div>
+</body>
+</html>
