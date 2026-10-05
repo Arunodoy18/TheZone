@@ -12,7 +12,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -242,11 +244,17 @@ private fun PhraseRow() {
         items(StatusPhrases.phrases.size) { i ->
             val c = i + 1
             val on = code == c
+            // .clickable, not a raw pointerInput/detectTapGestures — inside a LazyRow,
+            // a hand-rolled tap detector competes with the row's own scroll-gesture
+            // consumption and reliably loses to the tiniest amount of jitter a real
+            // touch (or adb input tap) has; .clickable is what disambiguates that
+            // correctly, same as every other tappable row in this app (e.g.
+            // ResponderScreen's triage rows, inside a LazyColumn).
             Box(
                 Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(if (on) Zone.signal else Zone.inkSoft)
-                    .pointerInput(c) { detectTapGestures(onTap = { pick(c) }) }
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { pick(c) }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
                 Text(
