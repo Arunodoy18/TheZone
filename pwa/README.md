@@ -40,8 +40,20 @@ pushes — and wasn't fixable from outside Netlify's own dashboard).
 
 ```
 { v, generatedAt,
-  reports:[{deviceId, cell:{lat,lon}, severity, status, battery, hops,
+  reports:[{deviceId, cell:{lat,lon}, pos:{lat,lon}|null, severity, status, battery, hops,
             altDelta, altTrend, silence, lastHeardMs}],
   cellLosses:[{cell:{lat,lon}, deviceCount, silentCount, firstSilent, lastSilent}],
   confidence:[{cell:{lat,lon}, severity, confidence, devices, pathDiversity, verified}] }
 ```
+
+`cell` is the coarse ~100 m severity-map bucket every report always has. `pos` is the
+reporting phone's own GPS fix at full ~1–2 m precision, decoded against the
+deployment's actual origin (`IncidentConfig`, not a hardcoded default) — `null` when
+that phone had no fix. The dashboard renders `pos` as a small teal diamond once
+you're zoomed in close; click one to fly to it at street level on satellite
+imagery and read its nearest-place label off the bottom bar.
+
+**This is exact, identifying location data about a real person in a disaster.**
+An exported `thezone-eoc.json` is as sensitive as it is useful — don't publish one
+casually, and remember the dashboard's `?live=` auto-poll mode is exactly as public
+as wherever you host the file it's polling.

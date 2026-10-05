@@ -355,8 +355,8 @@ const svg = (k) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON
 /* ------------------------------------------------------------ layer registry */
 const LAYERS = [
   { id: "zone",  name: "Zone mesh",       sub: "Offline-mesh reports & cell loss", icon: "net",    color: "#1be7c4",
-    ids: ["zone-cell", "zone-loss-halo", "zone-loss"],
-    note: "Your own Zone export. Drop a thezone-eoc.json on the map, or open this page with ?live=eoc.json. Shows a labelled demo until you do." },
+    ids: ["zone-cell", "zone-loss-halo", "zone-loss", "zone-precise-halo", "zone-precise-dot"],
+    note: "Your own Zone export. Drop a thezone-eoc.json on the map, or open this page with ?live=eoc.json. Shows a labelled demo until you do. A small diamond is one phone's exact GPS fix (±1–2 m) where the export carried one; click it to fly in and read its nearest-place label." },
   { id: "quake", name: "Earthquakes",     sub: "USGS · M2.5+ · last 7 days",       icon: "quake",  color: "#f2a93b",
     ids: ["quakes-halo", "quakes-dot", "quakes-label"], note: "USGS Earthquake Hazards Program — public GeoJSON feed, no key." },
   { id: "eonet", name: "Natural hazards", sub: "NASA EONET · open events",         icon: "hazard", color: "#ef5b32",
@@ -452,6 +452,13 @@ function addDataLayers() {
     "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 14, 14, 30], "circle-color": "rgba(239,91,50,0.22)", "circle-blur": 0.6 } });
   map.addLayer({ id: "zone-loss", type: "circle", source: "zone", filter: ["==", ["get", "kind"], "loss"], paint: {
     "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 8, 14, 17], "circle-color": "#05080b", "circle-stroke-color": "#ef5b32", "circle-stroke-width": 3 } });
+  // One phone's own exact GPS fix (±1-2 m), when its export carried one — separate
+  // from the coarse ~100 m severity cell above, and only visible once you're
+  // zoomed in close (a city-wide view of exact pins is just noise).
+  map.addLayer({ id: "zone-precise-halo", type: "circle", source: "zone", filter: ["==", ["get", "kind"], "precise"], minzoom: 11, paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 10, 18, 22], "circle-color": "rgba(27,231,196,0.25)", "circle-blur": 0.7 } });
+  map.addLayer({ id: "zone-precise-dot", type: "circle", source: "zone", filter: ["==", ["get", "kind"], "precise"], minzoom: 11, paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 18, 9], "circle-color": "#1be7c4", "circle-stroke-color": "#04140f", "circle-stroke-width": 1.6 } });
 }
 
 /* --------------------------------------------------------- modes and layers */
@@ -514,7 +521,9 @@ function showTip(point, title, lines, thumb) {
 const hideTip = () => { tip.style.display = "none"; };
 const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? "just now" : m < 90 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
 
-const INTERACTIVE = ["quakes-dot", "eonet-icon", "gdacs-icon", "firms-dot", "cams-dot", "cams-cluster", "zone-cell", "zone-loss"];
+const INTERACTIVE = ["quakes-dot", "eonet-icon", "gdacs-icon", "firms-dot", "cams-dot", "cams-cluster", "zone-cell", "zone-loss", "zone-precise-dot"];
+// PacketCodec's Status enum (docs/PACKET_SPEC.md) — only meaningful on a STATUS report.
+const STATUS_NAME = ["Unknown", "Safe", "Trapped / debris", "Rising water", "Injured", "Has supplies", "Responder"];
 function describe(f, point) {
   const p = f.properties, id = f.layer.id;
   if (id === "quakes-dot") return showTip(point, `M${p.mag} earthquake`, [p.place, ago(p.time)]);
@@ -525,6 +534,7 @@ function describe(f, point) {
   if (id === "cams-dot") return showTip(point, p.name, [p.place, "Click to open the feed"], p.img);
   if (id === "zone-cell") return showTip(point, `Cell (${p.la}, ${p.lo})`, [`${p.n} report${p.n === 1 ? "" : "s"} · avg severity ${(p.avg * 15).toFixed(1)}/15`, state.demo ? "DEMO SNAPSHOT — not live data" : ""]);
   if (id === "zone-loss") return showTip(point, "CELL_LOSS", [`${p.count} devices went silent together`, state.demo ? "DEMO SNAPSHOT — not live data" : ""]);
+  if (id === "zone-precise-dot") return showTip(point, STATUS_NAME[p.status] || "Report", [`${p.dev} · severity ${p.severity}/15 · ${p.hops} hop${p.hops === 1 ? "" : "s"}`, "Click for the exact fix + nearest place"]);
 }
 function visibleInteractive() { return INTERACTIVE.filter((id) => map.getLayer(id) && map.getLayoutProperty(id, "visibility") !== "none"); }
 let moveRaf = 0;
@@ -548,6 +558,14 @@ map.on("click", (e) => {
     return;
   }
   if (f.layer.id === "cams-dot") { openCam(f.properties, f.geometry.coordinates); return; }
+  if (f.layer.id === "zone-precise-dot") {
+    // The exact GPS fix Zone carried for this report. Flying in to street level and
+    // switching to satellite is the whole "show it as a precise location" request —
+    // the existing bottom-bar reverse-geocode (updateLocation, on moveend) does the
+    // "nearest place" label for free once the map lands here, no separate lookup.
+    setBase("sat");
+    map.flyTo({ center: f.geometry.coordinates, zoom: 18, duration: 1800, essential: true });
+  }
   describe(f, e.point);                                    // phones: a tap shows the detail card
   clearTimeout(describe.t); describe.t = setTimeout(hideTip, 6000);
 });
@@ -696,13 +714,18 @@ function ingestZone(data, isDemo) {
   const f = [];
   cells.forEach((c) => { const avg = c.sev / c.n / 15; f.push(pt(...cellToLonLat(c.la, c.lo), { kind: "cell", la: c.la, lo: c.lo, n: c.n, avg, color: sevColor(avg) })); });
   (data.cellLosses || []).forEach((l) => f.push(pt(...cellToLonLat(l.cell.lat, l.cell.lon), { kind: "loss", count: l.deviceCount })));
+  // A phone's own ~1-2 m GPS fix, when the export carried one (TransportController.exportEoc
+  // "pos") — the precise pin, separate from the coarse cell every report also still has.
+  (data.reports || []).forEach((r) => { if (r.pos && isFinite(r.pos.lat) && isFinite(r.pos.lon)) {
+    f.push(pt(r.pos.lon, r.pos.lat, { kind: "precise", dev: (r.deviceId || "").slice(0, 12), status: r.status, severity: r.severity, hops: r.hops, silence: r.silence })); } });
   state.demo = !!isDemo; setData("zone", { type: "FeatureCollection", features: f });
   state.count.zone = f.length; state.loaded.zone = true;
   const row = document.querySelector('[data-zone-sub]'); if (row) row.textContent = isDemo ? "DEMO SNAPSHOT — drop a real thezone-eoc.json" : "Live snapshot · " + new Date(data.generatedAt).toLocaleTimeString();
   updateCounters();
 }
 const DEMO = { generatedAt: Date.now(), reports: [
-  { cell: { lat: 2, lon: -1 }, severity: 11 }, { cell: { lat: 2, lon: -1 }, severity: 9 }, { cell: { lat: 2, lon: -1 }, severity: 10 },
+  { cell: { lat: 2, lon: -1 }, severity: 11, deviceId: "demo-a1", status: 2, hops: 1, pos: { lat: 28.2837, lon: 85.3775 } },
+  { cell: { lat: 2, lon: -1 }, severity: 9 }, { cell: { lat: 2, lon: -1 }, severity: 10 },
   { cell: { lat: 3, lon: 2 }, severity: 7 }, { cell: { lat: 5, lon: 5 }, severity: 3 }], cellLosses: [{ cell: { lat: -1, lon: 1 }, deviceCount: 12 }] };
 ["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault()));
 document.addEventListener("drop", (e) => { e.preventDefault(); const f = e.dataTransfer.files[0];

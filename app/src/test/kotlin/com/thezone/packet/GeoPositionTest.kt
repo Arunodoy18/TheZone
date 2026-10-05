@@ -32,6 +32,24 @@ class GeoPositionTest {
     }
 
     @Test
+    fun `toLat and toLon with an explicit origin round-trip a custom-origin encode`() {
+        val originLat = 27.3314 // Gangtok-ish
+        val originLon = 88.6138
+        val lat = originLat + 0.00091
+        val lon = originLon - 0.00205
+        val dLat = GeoPosition.encodeDelta(lat, originLat)
+        val dLon = GeoPosition.encodeDelta(lon, originLon)
+        assertTrue(abs(GeoPosition.toLat(dLat, originLat) - lat) < 1e-5)
+        assertTrue(abs(GeoPosition.toLon(dLon, originLon) - lon) < 1e-5)
+    }
+
+    @Test
+    fun `toLat and toLon with the default origin match the no-origin overload`() {
+        val delta = GeoPosition.encodeDelta(GeoPosition.ORIGIN_LAT + 0.0005, GeoPosition.ORIGIN_LAT)
+        assertEquals(GeoPosition.toLat(delta), GeoPosition.toLat(delta, GeoPosition.ORIGIN_LAT), 0.0)
+    }
+
+    @Test
     fun `real coordinates never collide with the NO_FIX sentinel`() {
         // farthest in-range point still clamps to -32767 / 32767, leaving -32768 (NO_FIX) free
         val d = GeoPosition.encodeDelta(0.0, 90.0) // way out of range, forces the clamp

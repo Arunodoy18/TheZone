@@ -132,6 +132,13 @@ object TransportController {
         fun cell(c: com.thezone.core.GridCell) = """{"lat":${c.latIndex},"lon":${c.lonIndex}}"""
         val now = System.currentTimeMillis()
         val silenceByDev = silence.snapshot().associateBy { it.deviceIdHex }
+        // Decode against *this deployment's* origin (IncidentConfig may override the
+        // default), not GeoPosition's hardcoded one — see GeoPosition.toLat/toLon's
+        // explicit-origin overload. Null (not this device's own context) is handled
+        // by falling back to the hardcoded default, which is also what encoding
+        // falls back to when nobody has ever set an override.
+        val originLat = appContext?.let { com.thezone.config.IncidentConfig.originLat(it) } ?: com.thezone.packet.GeoPosition.ORIGIN_LAT
+        val originLon = appContext?.let { com.thezone.config.IncidentConfig.originLon(it) } ?: com.thezone.packet.GeoPosition.ORIGIN_LON
 
         val reports = store.all()
             .filterNot { it.isOwn }
@@ -141,7 +148,15 @@ object TransportController {
             val gc = com.thezone.core.GridCells.of(r.packet.deltaLat, r.packet.deltaLon)
                 ?: com.thezone.core.GridCells.fallback(dev)
             val st = silenceByDev[dev]?.state?.name ?: "ALIVE"
-            """{"deviceId":"$dev","cell":${cell(gc)},"severity":${r.packet.severity},""" +
+            // The packet's own ~1-2 m fix, when it has one — for an exact pin on the
+            // online dashboard's satellite map, separate from the coarse severity
+            // cell above (which stays coarse; many things key off it being stable).
+            val hasFix = r.packet.deltaLat != com.thezone.packet.Packet.NO_FIX && r.packet.deltaLon != com.thezone.packet.Packet.NO_FIX
+            val pos = if (hasFix) {
+                """{"lat":${com.thezone.packet.GeoPosition.toLat(r.packet.deltaLat, originLat)},""" +
+                    """"lon":${com.thezone.packet.GeoPosition.toLon(r.packet.deltaLon, originLon)}}"""
+            } else "null"
+            """{"deviceId":"$dev","cell":${cell(gc)},"pos":$pos,"severity":${r.packet.severity},""" +
                 """"status":${r.packet.status},"battery":${BatteryScale.nibbleToPercent(r.packet.batteryLevel)},""" +
                 """"hops":${r.hopsFromOrigin},"altDelta":${r.packet.altDelta},"altTrend":${r.packet.altTrend},""" +
                 """"silence":"$st","lastHeardMs":${now - r.lastHeardAtMillis}}"""

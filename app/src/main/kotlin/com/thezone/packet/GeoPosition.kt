@@ -35,4 +35,16 @@ object GeoPosition {
     fun toLat(delta: Int): Double = ORIGIN_LAT + delta / SCALE
 
     fun toLon(delta: Int): Double = ORIGIN_LON + delta / SCALE
+
+    /**
+     * Decode against an explicit origin — use this, not [toLat]/[toLon], for
+     * anything encoded with [IncidentConfig]'s (possibly overridden) origin
+     * rather than this object's hardcoded default. Reconstructs the real-world
+     * coordinate at the packet's own ~1–2 m precision — e.g. for the EOC export
+     * ([com.thezone.transport.TransportController.exportEoc]) so the online
+     * dashboard can plot an exact pin, not just the ~100 m grid cell.
+     */
+    fun toLat(delta: Int, origin: Double): Double = origin + delta / SCALE
+
+    fun toLon(delta: Int, origin: Double): Double = origin + delta / SCALE
 }
