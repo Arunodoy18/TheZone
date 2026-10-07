@@ -70,7 +70,7 @@ object HeartbeatSource {
             deltaLat = deltaLat,
             deltaLon = deltaLon,
             status = status,
-            severity = 0,
+            severity = com.thezone.demo.SelfReport.severity,
             casualties = com.thezone.demo.SelfReport.headcount,
             timestampMinutes = EventClock.stampMinutes(nowMillis),
             batteryLevel = batteryLevel,

@@ -47,5 +47,18 @@ object SelfReport {
      */
     @Volatile
     var phraseCode: Int? = null
+
+    /**
+     * How urgent this report is, 0 (not stated) .. 15 (critical) — the packet's
+     * severity nibble, set on the Citizen screen. Was hardcoded to 0 for every
+     * report this app ever sent until this field existed; triage sort and the
+     * map's colour grid both key off it, so leaving it at 0 silently flattened
+     * every report to the same priority.
+     */
+    @Volatile
+    var severity: Int = 0
+        set(value) {
+            field = value.coerceIn(0, 15)
+        }
 }
 

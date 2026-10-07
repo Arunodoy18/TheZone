@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -171,6 +173,8 @@ fun CitizenScreen() {
         ) {
             HeadcountRow(s)
             Spacer(Modifier.height(10.dp))
+            SeverityRow()
+            Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatusButton(s.trapped, Status.TRAPPED_DEBRIS.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
                 StatusButton(s.waterRising, Status.RISING_WATER.code, status) { c -> status = toggle(status, c); UserStatus.code = status }
@@ -216,6 +220,64 @@ private fun HeadcountRow(s: CitizenStrings) {
             color = Zone.boneDim, fontSize = 15.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(start = 8.dp),
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StepBtn("–") { set(n - 1) }
+            StepBtn("+") { set(n + 1) }
+        }
+    }
+}
+
+/**
+ * Optional "how urgent is this" — feeds the packet's severity nibble (0..15),
+ * the number both the responder's triage sort and the map's colour grid key
+ * off. Previously hardcoded to 0 in every packet this app ever sent — nobody
+ * could actually say how bad it was. Default stays 0 ("not stated") so a
+ * panicking person isn't forced to rate themselves before the phone reports
+ * anything at all.
+ */
+@Composable
+private fun SeverityRow() {
+    val view = LocalView.current
+    var n by remember { mutableIntStateOf(SelfReport.severity) }
+    fun set(v: Int) {
+        n = v.coerceIn(0, 15)
+        SelfReport.severity = n
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    }
+    val label = when {
+        n == 0 -> "Urgency — not stated"
+        n <= 4 -> "Urgency $n/15 — mild"
+        n <= 9 -> "Urgency $n/15 — serious"
+        n <= 14 -> "Urgency $n/15 — severe"
+        else -> "Urgency 15/15 — critical"
+    }
+    val barColor = when {
+        n == 0 -> Zone.boneFaint
+        n <= 4 -> Zone.calm
+        n <= 9 -> Zone.amber
+        else -> Zone.alarm
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Zone.inkSoft)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(label, color = Zone.boneDim, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(5.dp))
+            Row(Modifier.width(140.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(Zone.inkLine)) {
+                Box(
+                    Modifier.fillMaxHeight()
+                        .width((140 * (n / 15f)).dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(barColor),
+                )
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StepBtn("–") { set(n - 1) }
             StepBtn("+") { set(n + 1) }
