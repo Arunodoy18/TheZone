@@ -18,9 +18,9 @@ problem statements **PS2** (Ground-Zero Communication Blackout) and **PS5**
 **Live:**
 [site](https://zone-thezone.vercel.app/) ·
 [download the APK](https://zone-thezone.vercel.app/zone.apk) ·
+[install card (QR)](https://zone-thezone.vercel.app/install.html) ·
 [EOC viewer](https://zone-thezone.vercel.app/viewer.html) ·
-[EOC command dashboard](https://zone-thezone.vercel.app/dashboard.html) ·
-[GitHub release](https://github.com/Arunodoy18/TheZone/releases/latest)
+[EOC command dashboard](https://zone-thezone.vercel.app/dashboard.html)
 
 ---
 
@@ -47,20 +47,24 @@ to stop transmitting** — reach the phone at 4 % before it goes dark, not after
 
 **Prebuilt APK** (signed release build, `com.thezone`, ~7 MB, `minSdk 26`):
 
-- <https://zone-thezone.vercel.app/zone.apk>
-- <https://github.com/Arunodoy18/TheZone/releases/latest/download/Zone.apk>
-- [`pwa/zone.apk`](pwa/zone.apk) in this repo
+- <https://zone-thezone.vercel.app/zone.apk> — always current; this is the one
+  link to share. Every push to `main` rebuilds and redeploys it.
+- [`pwa/zone.apk`](pwa/zone.apk) in this repo (identical file, same signature)
 
 ```bash
 adb install -r pwa/zone.apk
 ```
 
-On the phone: install, open, pick a mode. Grant Bluetooth + Location when asked
-(Android requires Location for BLE scanning — turn it on, then restart the app).
-Turn **off** battery optimisation for "Zone Probe (H0)" or the OS kills the
-advertiser.
+On the phone: install, allow "install from this source" the first time, open,
+pick a mode (Citizen / Responder / Map). Grant Bluetooth + Location when asked
+(Android requires Location for BLE scanning). Settings → Apps → Zone → Battery
+→ **Unrestricted**, or the OS throttles the radio in the background.
 
-Package id: `com.thezone.probe.debug` · label: **Zone Probe (H0)**.
+Package id: `com.thezone` · label: **Zone**.
+
+There is no GitHub Release for this project — the signed APK is only
+distributed through the Vercel link above and the committed `pwa/zone.apk`,
+so there is exactly one artifact to keep current, not two.
 
 ---
 
@@ -122,8 +126,8 @@ app/src/main/kotlin/com/thezone/
   config/       IncidentConfig (position origin, shared responder key) · LangStore
   persistence/  StatePersistence — crash-safe JSON snapshot of the store + collapses
   diagnostics/  CrashLog — on-device crash file, no analytics
-app/src/test/   78 JVM unit tests (no Android deps in core/ or packet/)
-pwa/            offline landing page + browser EOC viewer (?live= auto-refresh) + staged zone.apk  (Netlify: publish = pwa)
+app/src/test/   135 JVM unit tests (no Android deps in core/, packet/, or identity/)
+pwa/            offline landing page + browser EOC viewer + online command dashboard + staged zone.apk  (Vercel: outputDirectory = pwa, see vercel.json)
 docs/           specs, build plan, field checklist, explainer
 scripts/        deploy / release / eoc-watch / pdf helpers
 .github/        CI — unit tests + assembleDebug on push
