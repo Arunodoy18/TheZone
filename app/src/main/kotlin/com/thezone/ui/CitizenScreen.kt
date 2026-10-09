@@ -127,6 +127,7 @@ fun CitizenScreen() {
         ) {
             BluetoothBanner()
             AlertBanner()
+            AreaStatusBanner()
         }
 
         Column(
