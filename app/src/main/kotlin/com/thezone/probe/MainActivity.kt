@@ -16,7 +16,10 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.withTimeoutOrNull
 import com.thezone.mode.AppMode
 import com.thezone.mode.FirstRunStore
 import com.thezone.mode.ModeStore
@@ -153,9 +158,7 @@ private fun Root() {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTapGestures(onLongPress = { showSwitcher = true })
-                    },
+                    .pointerInput(Unit) { detectLongPressBeforeChildren { showSwitcher = true } },
             ) {
                 Crossfade(targetState = current, animationSpec = tween(360), label = "mode") { m ->
                     when (m) {
@@ -429,3 +432,39 @@ private fun missingPermissions(context: android.content.Context): List<String> =
     transportPermissions().filter {
         ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
     }
+
+/**
+ * Long-press-to-open-switcher, without stealing an ordinary tap from whatever's
+ * underneath (a scrollable [ResponderScreen] row, in particular). A plain
+ * `detectTapGestures(onLongPress = ...)` here competed with that row's own
+ * `clickable` on [PointerEventPass.Main] — same-pass gesture detectors race, and
+ * the row usually won, so long-pressing anywhere on a populated Responder list
+ * just opened Dig Here instead of the switcher (same class of bug as the
+ * PhraseRow tap-loss fix). Watching [PointerEventPass.Initial] instead lets this
+ * Box see the pointer before any child's Main-pass detector does: a short tap is
+ * never touched, so it reaches the child exactly as before, but once the hold
+ * crosses the long-press threshold this consumes the pointer — which aborts the
+ * child's in-flight `clickable` — and fires [onLongPress].
+ */
+private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectLongPressBeforeChildren(
+    onLongPress: () -> Unit,
+) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        // Race the release against the threshold rather than polling for
+        // intermediate events — a stationary hold isn't guaranteed to deliver
+        // any pointer event between Down and Up (synthetic input in particular
+        // routinely doesn't), so a loop that only checks elapsed time when a
+        // new event arrives can miss the window entirely.
+        val releasedEarly = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+            waitForUpOrCancellation(pass = PointerEventPass.Initial)
+        } != null
+        if (!releasedEarly) {
+            onLongPress()
+            // Still down past the threshold: consume the eventual release so
+            // the child's own (not-yet-resolved) Main-pass tap detector sees
+            // this pointer as already consumed and aborts its click.
+            waitForUpOrCancellation(pass = PointerEventPass.Initial)?.consume()
+        }
+    }
+}
