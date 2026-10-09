@@ -1,9 +1,13 @@
 package com.thezone.probe
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -44,8 +48,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.thezone.mode.AppMode
+import com.thezone.mode.FirstRunStore
 import com.thezone.mode.ModeStore
 import com.thezone.transport.BleForegroundService
 import com.thezone.transport.TransportController
@@ -86,6 +92,7 @@ private fun Root() {
     var showDebug by remember { mutableStateOf(false) }
     var showBattery by remember { mutableStateOf(false) }
     var showContacts by remember { mutableStateOf(false) }
+    var showBatteryNudge by rememberSaveable { mutableStateOf(!FirstRunStore.batteryPromptSeen(context)) }
     // shown on every cold start; survives rotation but not the task being cleared
     var showLanding by rememberSaveable { mutableStateOf(true) }
 
@@ -130,33 +137,51 @@ private fun Root() {
     }
 
     PermissionGate {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onLongPress = { showSwitcher = true })
+        if (showBatteryNudge) {
+            FirstRunBatteryNudge(
+                onSetUp = {
+                    FirstRunStore.markBatteryPromptSeen(context)
+                    showBatteryNudge = false
+                    showBattery = true
                 },
-        ) {
-            Crossfade(targetState = current, animationSpec = tween(360), label = "mode") { m ->
-                when (m) {
-                    AppMode.CITIZEN -> CitizenScreen()
-                    AppMode.RESPONDER -> ResponderScreen()
-                    AppMode.MAP -> MapScreen()
-                }
-            }
-            if (showSwitcher) {
-                ModeSwitcher(
-                    current = current,
-                    onPick = {
-                        ModeStore.set(context, it)
-                        mode = it
-                        showSwitcher = false
+                onSkip = {
+                    FirstRunStore.markBatteryPromptSeen(context)
+                    showBatteryNudge = false
+                },
+            )
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(onLongPress = { showSwitcher = true })
                     },
-                    onDebug = { showSwitcher = false; showDebug = true },
-                    onBattery = { showSwitcher = false; showBattery = true },
-                    onContacts = { showSwitcher = false; showContacts = true },
-                    onDismiss = { showSwitcher = false },
-                )
+            ) {
+                Crossfade(targetState = current, animationSpec = tween(360), label = "mode") { m ->
+                    when (m) {
+                        AppMode.CITIZEN -> CitizenScreen()
+                        AppMode.RESPONDER -> ResponderScreen()
+                        AppMode.MAP -> MapScreen()
+                    }
+                }
+                if (showSwitcher) {
+                    ModeSwitcher(
+                        current = current,
+                        onPick = {
+                            ModeStore.set(context, it)
+                            mode = it
+                            showSwitcher = false
+                        },
+                        onDebug = { showSwitcher = false; showDebug = true },
+                        onBattery = {
+                            FirstRunStore.markBatteryPromptSeen(context)
+                            showSwitcher = false
+                            showBattery = true
+                        },
+                        onContacts = { showSwitcher = false; showContacts = true },
+                        onDismiss = { showSwitcher = false },
+                    )
+                }
             }
         }
     }
@@ -166,24 +191,64 @@ private fun Root() {
 @Composable
 private fun PermissionGate(content: @Composable () -> Unit) {
     val context = LocalContext.current
+    val activity = context as? Activity
     var granted by remember { mutableStateOf(missingPermissions(context).isEmpty()) }
+    // Set once the system dialog has actually been shown and answered — before
+    // that, shouldShowRequestPermissionRationale is meaningless (it's also false
+    // pre-first-ask), so "permanently denied" can't be judged from one check.
+    var attempted by rememberSaveable { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { granted = missingPermissions(context).isEmpty() }
+    ) {
+        attempted = true
+        granted = missingPermissions(context).isEmpty()
+    }
+
+    // Re-check on return from Settings — a user who left this screen to fix the
+    // permission by hand must not come back to find it still stuck showing the
+    // same blocked state.
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) granted = missingPermissions(context).isEmpty()
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
 
     if (!granted) {
+        // Once the OS has stopped offering a rationale for every still-missing
+        // permission, it has also stopped showing the request dialog at all (the
+        // user picked "Don't ask again", or denied twice on older Android) — the
+        // "Allow" button would silently relaunch a dialog that never appears,
+        // leaving a real user stuck on this screen with no visible way out.
+        val permanentlyDenied = attempted && activity != null &&
+            missingPermissions(context).none { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
+
         Column(
             Modifier.fillMaxSize().background(Zone.ink).padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "Allow Bluetooth and location so this phone can be heard.",
+                if (permanentlyDenied)
+                    "Bluetooth and location are blocked for Zone. Turn them on in Settings so this phone can be heard."
+                else
+                    "Allow Bluetooth and location so this phone can be heard.",
                 color = Zone.bone, fontSize = 20.sp, fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(16.dp))
-            ZoneButton("Allow", filled = true) { launcher.launch(transportPermissions().toTypedArray()) }
+            if (permanentlyDenied) {
+                ZoneButton("Open Settings", filled = true) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            } else {
+                ZoneButton("Allow", filled = true) { launcher.launch(transportPermissions().toTypedArray()) }
+            }
         }
         return
     }
@@ -222,6 +287,33 @@ private fun ModePicker(onPick: (AppMode) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Shown once, right after the first permission grant — "Keep Zone alive" used
+ * to be reachable only through an undiscoverable long-press, so a real user
+ * could have BLE working correctly and then watch it get silently killed in
+ * the background by Doze/an OEM battery manager with no idea why. Skippable:
+ * this is a nudge, not a gate — the mesh already works without it.
+ */
+@Composable
+private fun FirstRunBatteryNudge(onSetUp: () -> Unit, onSkip: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().background(Zone.ink).padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("One more thing", color = Zone.bone, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Your phone's battery manager will stop Zone from broadcasting once the screen is off, unless you tell it not to. Takes a few seconds.",
+            color = Zone.boneDim, fontSize = 15.sp, lineHeight = 21.sp,
+        )
+        Spacer(Modifier.height(24.dp))
+        ZoneButton("Set it up", filled = true) { onSetUp() }
+        Spacer(Modifier.height(10.dp))
+        ZoneButton("Skip for now", filled = false) { onSkip() }
     }
 }
 
