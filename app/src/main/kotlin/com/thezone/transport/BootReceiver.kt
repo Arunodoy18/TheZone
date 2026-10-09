@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 
 /**
@@ -23,7 +24,15 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         if (!ServiceState.wasActive(context)) return
-        if (missingPermissions(context).isNotEmpty()) return
+        val missing = missingPermissions(context)
+        if (missing.isNotEmpty()) {
+            // No WorkManager / periodic retry here (no new dependency) — but this
+            // is exactly the "someone unconscious, phone reboots" scenario CLAUDE.md
+            // rule 6 cares about, so at least leave a trail for why broadcasting
+            // didn't resume, instead of failing in total silence.
+            Log.w("TheZone", "BootReceiver: was active before reboot but missing permissions $missing — not restarting")
+            return
+        }
         BleForegroundService.start(context)
     }
 

@@ -53,6 +53,14 @@ class SilenceEvaluator(
      * a whole cluster at one hop. Turn on where multiple relays are expected.
      */
     private val requireCellPathDiversity: Boolean = false,
+    /**
+     * Hard cap on distinct devices tracked, mirroring [ReportStore.maxReports] —
+     * unlike that store, this had no ceiling at all before: one entry per unique
+     * device_id ever heard, forever, for the life of the process. Harmless over a
+     * demo's lifetime, but a slow unbounded leak over a real multi-day deployment
+     * with phone/responder churn. Least-recently-heard device is evicted past this.
+     */
+    private val maxTracks: Int = 2_000,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -83,7 +91,16 @@ class SilenceEvaluator(
         synchronized(lock) {
             val sentAt = EventClock.sentAtMillis(packet.timestampMinutes, receivedAtMillis)
                 .coerceAtMost(receivedAtMillis)
-            if (receivedAtMillis - sentAt > freshnessWindowMillis) return // stale relay echo
+            // A big (claimed-sent-at vs received-at) gap normally means "this is an
+            // old heartbeat, relayed just now" — ignore it for liveness, it's not
+            // news. But the same gap also shows up when the *sender's own clock* is
+            // wrong (stuck after a dead-battery reboot with no network time sync —
+            // a realistic field condition with no cellular to fix it), and in that
+            // case a hop-0 packet (heard directly, not relayed) is never a stale
+            // echo: it is definitionally live right now regardless of what its
+            // timestamp claims. Gate the staleness check on hopCount > 0 so a
+            // clock-skewed device heard directly still registers as alive.
+            if (packet.hopCount > 0 && receivedAtMillis - sentAt > freshnessWindowMillis) return // stale relay echo
 
             val battery = BatteryScale.nibbleToPercent(packet.batteryLevel)
             val promised = packet.nextExpectedTxSeconds.coerceAtLeast(1)
@@ -101,6 +118,7 @@ class SilenceEvaluator(
                     cell = cell,
                     hopsSeen = mutableSetOf(packet.hopCount),
                 )
+                evictIfOverCapacity()
                 return
             }
             if (receivedAtMillis >= track.lastHeardAtMillis) {
@@ -137,6 +155,7 @@ class SilenceEvaluator(
                     cell = cell,
                     hopsSeen = mutableSetOf(packet.hopCount),
                 )
+                evictIfOverCapacity()
                 return
             }
             if (lastHeardAtMillis >= track.lastHeardAtMillis) {
@@ -226,6 +245,16 @@ class SilenceEvaluator(
         transitionLog.addLast(transition)
         while (transitionLog.size > maxTransitionLog) transitionLog.removeFirst()
         return transition
+    }
+
+    /** Caller holds [lock]. Trims to [maxTracks], least-recently-heard first — see the field doc comment. */
+    private fun evictIfOverCapacity() {
+        if (tracks.size <= maxTracks) return
+        val victimKeys = tracks.entries
+            .sortedBy { it.value.lastHeardAtMillis }
+            .take(tracks.size - maxTracks)
+            .map { it.key }
+        victimKeys.forEach(tracks::remove)
     }
 
     /** Caller holds [lock]. One [CellLoss] per cell, emitted once. */

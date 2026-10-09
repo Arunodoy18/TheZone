@@ -94,6 +94,52 @@ class ReportStoreTest {
     }
 
     @Test
+    fun rejectsAnUnknownReservedPacketType() {
+        // decode() is deliberately permissive — this store is the layer that must
+        // refuse a well-formed-length packet whose type nibble isn't one it knows,
+        // so a buggy/adversarial peer can't plant a phantom device on the map.
+        val store = ReportStore()
+        val id = identity()
+        val reservedType = PacketCodec.encode(
+            Packet(
+                version = Packet.PROTOCOL_VERSION,
+                type = 7, // reserved, not STATUS/RESOLVE/ALERT/SIG
+                deviceId = id.deviceId,
+                deltaLat = 10,
+                deltaLon = -20,
+                status = 2,
+                severity = 5,
+                casualties = 1,
+                timestampMinutes = 1000,
+                batteryLevel = 8,
+                hopCount = 0,
+                nextExpectedTxSeconds = 10,
+                altDelta = 3,
+                altTrend = 0,
+            ),
+            id,
+        )
+        assertEquals(AcceptOutcome.REJECTED_UNKNOWN_TYPE, store.accept(reservedType, -50))
+        assertEquals(0, store.size)
+    }
+
+    @Test
+    fun perDeviceQuotaCapsOneFloodingSenderWithoutStarvingOthers() {
+        var clock = 0L
+        val store = ReportStore(maxReports = 1_000, maxReportsPerDevice = 5, nowMillis = { clock })
+        val flooder = identity()
+        // 20 distinct heartbeats (distinct timestampMinutes -> distinct contentId) from one device
+        repeat(20) { i ->
+            clock += 1_000
+            store.accept(packetBytes(flooder).let { PacketCodec.encode(
+                PacketCodec.decode(it).copy(timestampMinutes = i + 1), flooder,
+            ) }, -50, clock)
+        }
+        val fromFlooder = store.all().count { it.packet.deviceId.contentEquals(flooder.deviceId) }
+        assertEquals(5, fromFlooder)
+    }
+
+    @Test
     fun relayBatch_incrementsCopy_leavesStoredOriginalUntouched() {
         val store = ReportStore()
         val bytes = packetBytes(hop = 0)
@@ -120,6 +166,32 @@ class ReportStoreTest {
         val relay = store.relayBatch(10)
         assertEquals(1, relay.size)
         assertEquals(4, PacketCodec.hopCount(relay[0]))
+    }
+
+    @Test
+    fun relayBatch_collapsesToOneLatestEntryPerDevice() {
+        // contentId includes the timestamp, so a single chatty device can hold
+        // many distinct, superseded entries. relayBatch must not round-robin over
+        // all of a device's stale history — only its single freshest report
+        // should ever be a relay candidate, or airtime gets wasted re-broadcasting
+        // old heartbeats instead of converging on current state.
+        var clock = 0L
+        val store = ReportStore(nowMillis = { clock })
+        val chatty = identity()
+        val timestamps = listOf(1, 2, 3, 4, 5)
+        var latestBytes: ByteArray? = null
+        for (ts in timestamps) {
+            clock += 1_000
+            val withTs = PacketCodec.encode(PacketCodec.decode(packetBytes(chatty, hop = 1)).copy(timestampMinutes = ts), chatty)
+            store.accept(withTs, -50, clock)
+            latestBytes = withTs
+        }
+        assertEquals(5, store.size) // the store itself still holds every distinct heartbeat
+
+        val relayed = store.relayBatch(10)
+        assertEquals(1, relayed.size) // but only one candidate per device
+        // contentId masks the hop nibble, so this compares message identity only.
+        assertArrayEquals(PacketCodec.contentId(latestBytes!!), PacketCodec.contentId(relayed[0]))
     }
 
     @Test

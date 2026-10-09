@@ -41,7 +41,11 @@ import java.util.concurrent.TimeUnit
 object TransportController {
 
     private val lock = Any()
-    private var transport: ReportTransport? = null
+    // Read from the UI thread, the BLE scan-callback thread (ingest) and the
+    // relay-pump thread; @Volatile so a write on one is visible on the others
+    // without each individually taking `lock` (a plain `var` gave no such
+    // guarantee under the JMM, even though the current failure mode is benign).
+    @Volatile private var transport: ReportTransport? = null
     private val store = ReportStore()
     private val silence = SilenceEvaluator()
     private val resolveLog = ResolveLog()
@@ -52,7 +56,7 @@ object TransportController {
     // that still gates RESOLVE/ALERT. Kept in its own tiny ReportStore so a SIG
     // fragment never touches silence tracking, triage, or the map — see
     // PacketCodec's TYPE_SIG doc comment and SignatureLog's.
-    private val sigStore = ReportStore(maxReports = 128)
+    private val sigStore = ReportStore(maxReports = 128, allowedTypes = setOf(PacketCodec.TYPE_SIG))
     private val signatureLog = com.thezone.core.SignatureLog()
 
     private val pump = Executors.newSingleThreadScheduledExecutor { r ->
@@ -60,8 +64,8 @@ object TransportController {
     }
     private var pumpTask: ScheduledFuture<*>? = null
     private var pumpTick = 0L
-    private var lastAdvertisedHex: String? = null
-    private var appContext: Context? = null
+    @Volatile private var lastAdvertisedHex: String? = null
+    @Volatile private var appContext: Context? = null
     private var pressureReader: PressureReader? = null
     private var locationReader: LocationReader? = null
     private var motionReader: MotionReader? = null
@@ -321,8 +325,26 @@ object TransportController {
 
     fun useBle(context: Context) = swap(BleTransport(context))
 
+    @Volatile private var started = false
+
+    /**
+     * Re-entrant: `BleForegroundService.onStartCommand` can run more than once
+     * for an already-running service (a second `startForegroundService()` call,
+     * an OEM restarting the service to refresh its notification, START_STICKY
+     * redelivery). Without this guard, every such call reloaded the on-disk
+     * snapshot over the live store (dropping up to [SAVE_DEBOUNCE_MS] of
+     * just-received reports) and reset the relay pump's cursor/cadence. Once
+     * [started], a repeat call is just "make sure the radio and pump are up."
+     */
     fun start(context: Context) {
         appContext = context.applicationContext
+        if (started) {
+            transport?.start()
+            if (pumpTask == null) startPump()
+            ping()
+            return
+        }
+        started = true
         store.ownDeviceIdHex = runCatching {
             DeviceKeyStore.identity(context).deviceId.toHex()
         }.getOrNull()
@@ -383,6 +405,7 @@ object TransportController {
     }
 
     fun stop() {
+        started = false
         pumpTask?.cancel(false)
         pumpTask = null
         lastAdvertisedHex = null
@@ -872,10 +895,26 @@ object TransportController {
         ping()
     }
 
+    @Volatile private var lastAdvertiseAttemptMillis = 0L
+
+    /**
+     * Normally only re-advertises when the bytes actually changed (duplicate
+     * radio calls are wasted airtime). But a dead advertising set (a stuck
+     * controller, ADVERTISE_FAILED_TOO_MANY_ADVERTISERS, a silently-never-landed
+     * start) looks identical to "bytes unchanged" from here, and several packet
+     * fields can go a full minute without changing at all — so without a forced
+     * periodic re-send, a dead advertiser could stay dead indefinitely. Forcing
+     * a re-advertise every [ADVERTISE_FORCE_INTERVAL_MS] self-heals that case:
+     * [BleTransport.advertise] always fully stops and restarts the advertising
+     * set(s), so a forced call is itself the retry.
+     */
     private fun advertiseIfChanged(t: ReportTransport, bytes: ByteArray) {
         val hex = bytes.toHex()
-        if (hex == lastAdvertisedHex) return
+        val now = System.currentTimeMillis()
+        val forceDue = now - lastAdvertiseAttemptMillis >= ADVERTISE_FORCE_INTERVAL_MS
+        if (hex == lastAdvertisedHex && !forceDue) return
         lastAdvertisedHex = hex
+        lastAdvertiseAttemptMillis = now
         t.advertise(bytes)
     }
 
@@ -884,6 +923,9 @@ object TransportController {
     }
 
     private fun ping() = onChange?.invoke()
+
+    /** Force a re-advertise at least this often even if the packet bytes haven't changed — see [advertiseIfChanged]. */
+    private const val ADVERTISE_FORCE_INTERVAL_MS = 20_000L
 
     private const val PUMP_PERIOD_MS = 2_000L
 

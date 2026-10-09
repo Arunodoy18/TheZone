@@ -45,7 +45,10 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
     private val btManager = appContext.getSystemService(BluetoothManager::class.java)
     private val adapter get() = btManager?.adapter
 
-    private val worker = HandlerThread("ble-transport").apply { start() }
+    // Daemon: a stop() without a shutdown() (ordinary service stop/restart, not a
+    // transport swap) otherwise leaves this thread parked for the process
+    // lifetime — harmless when idle, but daemon keeps it from ever blocking exit.
+    private val worker = HandlerThread("ble-transport").apply { isDaemon = true; start() }
     private val handler = Handler(worker.looper)
 
     @Volatile private var packetBytes: ByteArray? = null
@@ -243,8 +246,11 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
 
         alternateTick = object : Runnable {
             override fun run() {
-                if (!running || alternatingCallback == null) return
+                if (!running) return
                 val adv = adapter?.bluetoothLeAdvertiser ?: return
+                // A null callback here means the last leg's start silently never
+                // landed (e.g. ADVERTISE_FAILED_* with nothing to stop) — still
+                // flip and retry instead of giving up the flip cycle forever.
                 alternatingCallback?.let { runCatching { adv.stopAdvertisingSet(it) } }
                 alternatingPhy =
                     if (alternatingPhy == BluetoothDevice.PHY_LE_CODED) BluetoothDevice.PHY_LE_1M
@@ -360,6 +366,13 @@ class BleTransport(context: Context) : BaseTransport(kind = "BLE") {
         val scanner = adapter?.bluetoothLeScanner
         if (scanner == null) {
             fail("no BluetoothLeScanner")
+            return
+        }
+        if (!hasScanPermission()) {
+            // Re-checked every call, not just at start() — a runtime permission
+            // revoked mid-session (user toggle, OS auto-reset of an idle app's
+            // permissions) must not leave scanning permanently, silently off.
+            fail("BLUETOOTH_SCAN / location not granted")
             return
         }
         val settings = ScanSettings.Builder()

@@ -209,4 +209,22 @@ class SilenceEvaluatorTest {
         assertTrue(ev.snapshot(c).all { it.state == SilenceState.UNEXPECTED_SILENCE })
         assertTrue("silences >120s apart must not read as one collapse", ev.cellLosses().isEmpty())
     }
+
+    @Test
+    fun trackCountIsCappedLeastRecentlyHeardEvicted() {
+        // Unlike ReportStore, this had no ceiling at all before — one Track per
+        // distinct device_id ever heard, forever. Confirms the cap holds and keeps
+        // the most recently heard devices over the oldest.
+        var c = clock
+        val ev = SilenceEvaluator(nowMillis = { c }, maxTracks = 5)
+        val ids = List(10) { newId() }
+        ids.forEach { id ->
+            c += 1_000
+            ev.onPacket(idHex(id), packet(id, 80, 10, c), c)
+        }
+        assertEquals(5, ev.snapshot(c).size)
+        val survivors = ev.snapshot(c).map { it.deviceIdHex }.toSet()
+        val newestFive = ids.takeLast(5).map { idHex(it) }.toSet()
+        assertEquals(newestFive, survivors)
+    }
 }

@@ -23,6 +23,7 @@ class RestoreTest {
         nextTx: Int = 10,
         deltaLat: Int = 45,
         deltaLon: Int = 45,
+        hopCount: Int = 0,
     ): ByteArray = PacketCodec.encode(
         Packet(
             version = Packet.PROTOCOL_VERSION,
@@ -35,7 +36,7 @@ class RestoreTest {
             casualties = 0,
             timestampMinutes = 1000,
             batteryLevel = battery,
-            hopCount = 0,
+            hopCount = hopCount,
             nextExpectedTxSeconds = nextTx,
             altDelta = 0,
             altTrend = 0,
@@ -77,12 +78,27 @@ class RestoreTest {
     }
 
     @Test
-    fun `onPacket would have rejected the same stale report as a relay echo`() {
+    fun `onPacket rejects a relayed (hop greater than 0) stale report as a relay echo`() {
         var now = 10_000_000L
         val ev = SilenceEvaluator(nowMillis = { now })
-        val p = PacketCodec.decode(bytes())
+        val p = PacketCodec.decode(bytes(hopCount = 1))
         ev.onPacket("beef", p, receivedAtMillis = now) // stamp says ~ EventClock epoch, far older than 90s
         assertEquals(0, ev.snapshot(now).size)
+    }
+
+    @Test
+    fun `onPacket still tracks a direct (hop 0) report even with a stale-looking clock`() {
+        // A device heard directly (hop 0) can't be a stale relay echo — it's live
+        // right now regardless of what its own clock claims. This is the fix for a
+        // phone whose clock is stuck in the past after a dead-battery reboot with
+        // no network time sync: before the fix, such a device could never register
+        // as alive at all, permanently defeating Dead Man's Packet for it.
+        var now = 10_000_000L
+        val ev = SilenceEvaluator(nowMillis = { now })
+        val p = PacketCodec.decode(bytes(hopCount = 0))
+        ev.onPacket("beef", p, receivedAtMillis = now) // stamp says ~ EventClock epoch, far older than 90s
+        assertEquals(1, ev.snapshot(now).size)
+        assertEquals(SilenceState.ALIVE, ev.deviceState("beef"))
     }
 
     @Test

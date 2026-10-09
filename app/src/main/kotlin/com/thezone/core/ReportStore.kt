@@ -15,12 +15,25 @@ import com.thezone.packet.PacketCodec
 class ReportStore(
     /** Hard cap; the least-recently-heard non-own report is evicted past this. */
     private val maxReports: Int = 2_000,
+    /**
+     * Packet types this store will hold. Defaults to the main store's set
+     * (STATUS/RESOLVE/ALERT); [TransportController]'s dedicated `sigStore`
+     * passes `setOf(PacketCodec.TYPE_SIG)` instead. Anything outside this set
+     * is rejected at [accept] — see that method's comment.
+     */
+    private val allowedTypes: Set<Int> = KNOWN_MAIN_STORE_TYPES,
+    /** Per-sender fairness cap — see [evictIfDeviceOverQuota]. */
+    private val maxReportsPerDevice: Int = 100,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
 
     private val lock = Any()
     private val byId = LinkedHashMap<String, StoredReport>()
     private var relayCursor = 0
+
+    companion object {
+        val KNOWN_MAIN_STORE_TYPES = setOf(Packet.TYPE_STATUS, PacketCodec.TYPE_RESOLVE, PacketCodec.TYPE_ALERT)
+    }
 
     /** Hex device_id of this device, so its own heartbeat is never relayed by it. */
     @Volatile
@@ -47,6 +60,15 @@ class ReportStore(
         val packet = runCatching { PacketCodec.decode(bytes) }.getOrNull()
             ?: return AcceptOutcome.REJECTED_MALFORMED
 
+        // decode() is deliberately permissive (never throws on a well-formed-length
+        // buffer, however garbage its content) — this is the one place that enforces
+        // "only a known packet type may become a stored report." Without it, a
+        // buggy or adversarial peer broadcasting a reserved type (4..15 — SIG,
+        // handled separately, is 3) would be silently admitted as if it were a real
+        // STATUS/RESOLVE/ALERT: a phantom device with fabricated position/status/
+        // severity on the triage list and EOC map, able to help fake a CELL_LOSS.
+        if (packet.type !in allowedTypes) return AcceptOutcome.REJECTED_UNKNOWN_TYPE
+
         val id = PacketCodec.contentId(bytes).toHexLower()
         val isOwn = ownDeviceIdHex != null && packet.deviceId.toHexLower() == ownDeviceIdHex
 
@@ -66,6 +88,7 @@ class ReportStore(
                     timesHeard = 1,
                     isOwn = isOwn,
                 )
+                if (!isOwn) evictIfDeviceOverQuota(packet.deviceId.toHexLower())
                 evictIfOverCapacity()
                 return AcceptOutcome.NEW
             }
@@ -115,6 +138,23 @@ class ReportStore(
         victims.forEach { byId.remove(it.contentId) }
     }
 
+    /**
+     * Caller holds [lock]. One sender gets at most [maxReportsPerDevice] distinct
+     * entries (e.g. one per heartbeat, since [contentId] includes the timestamp —
+     * see its doc comment). Without this, a single flooding device — a clock
+     * racing forward, a firmware bug re-sending every second — can fill the
+     * whole [maxReports] cap with its own stale history and push other, genuinely
+     * distinct devices' single most-recent reports out purely by recency, a
+     * one-sender denial-of-service against shared store capacity.
+     */
+    private fun evictIfDeviceOverQuota(deviceIdHex: String) {
+        val mine = byId.values.filter { !it.isOwn && it.packet.deviceId.toHexLower() == deviceIdHex }
+        if (mine.size <= maxReportsPerDevice) return
+        mine.sortedBy { it.lastHeardAtMillis }
+            .take(mine.size - maxReportsPerDevice)
+            .forEach { byId.remove(it.contentId) }
+    }
+
     fun get(contentIdHex: String): StoredReport? = synchronized(lock) { byId[contentIdHex] }
 
     fun all(): List<StoredReport> = synchronized(lock) { byId.values.toList() }
@@ -154,12 +194,21 @@ class ReportStore(
     ): List<ByteArray> {
         if (max <= 0) return emptyList()
         synchronized(lock) {
+            // [contentId] includes the timestamp (see its doc comment), so one
+            // chatty device can hold dozens of distinct, superseded heartbeats.
+            // Round-robining over all of them (rather than just its latest) would
+            // spend scarce relay airtime re-broadcasting stale history instead of
+            // ever converging on "each device's current state" — collapse to one
+            // candidate (the freshest) per device before the round-robin pick.
             val candidates = byId.values
                 .filter {
                     !it.isOwn &&
                         it.receivedHopCount < Packet.MAX_HOPS &&
                         includeDevice(it.packet.deviceId.toHexLower())
                 }
+                .groupBy { it.packet.deviceId.toHexLower() }
+                .values
+                .map { perDevice -> perDevice.maxBy { it.lastHeardAtMillis } }
                 .sortedBy { it.contentId } // deterministic order for a stable cursor
             if (candidates.isEmpty()) return emptyList()
 
@@ -190,6 +239,9 @@ enum class AcceptOutcome {
 
     /** auth field is missing or all-zero (relay rule 1). */
     REJECTED_AUTH_SHAPE,
+
+    /** Decodes cleanly, but its type nibble isn't one this store accepts (e.g. a reserved/future type). */
+    REJECTED_UNKNOWN_TYPE,
 }
 
 /** One message identity held in the store. [bytes] is the record as received — never mutated. */
