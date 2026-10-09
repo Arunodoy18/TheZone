@@ -95,16 +95,17 @@ object PacketCodec {
     // --- RESOLVE (packet type 1) ---------------------------------------------
 
     /**
-     * Build a RESOLVE packet: responder [resolver] declares the report identified
-     * by [resolvedContentId] handled. type = [TYPE_RESOLVE]; the first
-     * [RESOLVE_PREFIX_BYTES] of the target content-id go in reserved[24,31);
-     * `auth` is MAC'd with [responderKey] so only provisioned responders can
-     * issue one. The remaining fields carry the responder's own live state, so
-     * the packet doubles as proof the responder is alive.
+     * Build a RESOLVE packet: [resolver] declares the report identified by
+     * [resolvedContentId] reached. type = [TYPE_RESOLVE]; the first
+     * [RESOLVE_PREFIX_BYTES] of the target content-id go in reserved[24,31).
+     * `auth` is self-signed with the issuer's own per-install key — the same
+     * trust level as an ordinary STATUS packet, deliberately: any phone running
+     * the app can issue and honour one, zero pre-shared setup, no one to
+     * provision before the mesh is useful. The remaining fields carry the
+     * issuer's own live state, so the packet doubles as proof they're alive.
      */
     fun buildResolve(
         resolver: DeviceIdentity,
-        responderKey: ByteArray,
         resolvedContentId: ByteArray,
         deltaLat: Int,
         deltaLon: Int,
@@ -132,7 +133,7 @@ object PacketCodec {
             altTrend = altTrend,
         )
         // auth covers [0,19) only, so writing reserved[24,31) after encode is safe
-        val out = encode(p, resolver, authKey = responderKey)
+        val out = encode(p, resolver)
         resolvedContentId.copyInto(out, OFF_RESERVED, 0, RESOLVE_PREFIX_BYTES)
         return out
     }
@@ -171,11 +172,13 @@ object PacketCodec {
     }
 
     // --- ALERT (packet type 2) --------------------------------------------
-    // A government-style emergency alert that floods the mesh. Same 31 bytes,
-    // fields re-purposed: status = category (0..4), next_expected_tx = minutes the
+    // An emergency alert that floods the mesh. Same 31 bytes, fields
+    // re-purposed: status = category (0..4), next_expected_tx = minutes the
     // alert stays valid, alt_delta = radius in units of 20 m (unsigned 0..255),
-    // reserved[24] = phrase code (0..255). auth is MAC'd with the pre-shared
-    // responder / authority key so only provisioned phones can issue one.
+    // reserved[24] = phrase code (0..255). auth is self-signed with the
+    // issuer's own per-install key — any phone can issue and any phone honours
+    // it, the same trust level as every other packet type. Zero-config, by
+    // design: nobody provisions a shared key before the mesh works.
 
     const val TYPE_ALERT = 2
 
@@ -190,7 +193,6 @@ object PacketCodec {
 
     fun buildAlert(
         issuer: DeviceIdentity,
-        authorityKey: ByteArray,
         category: Int,
         phraseCode: Int,
         deltaLat: Int,
@@ -212,7 +214,7 @@ object PacketCodec {
         out[OFF_BATTERY_HOPS] = ((batteryLevel and 0x0F) shl 4).toByte() // hop 0
         putUint16(out, OFF_NEXT_TX, validForMinutes.coerceIn(0, 65535))
         out[OFF_ALT_DELTA] = ((radiusMeters / ALERT_RADIUS_UNIT_M).coerceIn(0, 255)).toByte()
-        val auth = DeviceIdentity.sha256(authorityKey, out.copyOfRange(0, AUTH_COVERAGE_END))
+        val auth = DeviceIdentity.sha256(issuer.key, out.copyOfRange(0, AUTH_COVERAGE_END))
         auth.copyInto(out, OFF_AUTH, 0, AUTH_BYTES)
         out[OFF_ALT_TREND] = 0
         out[OFF_RESERVED] = (phraseCode and 0xFF).toByte()

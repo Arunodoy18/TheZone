@@ -7,18 +7,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
 
-/** ALERT (packet type 2) — signed with the authority key, floods the mesh. */
+/** ALERT (packet type 2) — self-signed with the issuer's own key, floods the mesh. */
 class AlertPacketTest {
 
     private fun id(seed: Int) =
         DeviceIdentity(ByteArray(DeviceIdentity.KEY_BYTES) { Random(seed).nextInt().toByte() })
 
     @Test
-    fun `alert round-trips its fields and verifies with the authority key only`() {
+    fun `alert round-trips its fields and verifies with the issuer's own key only`() {
         val issuer = id(1)
-        val key = ByteArray(16) { (it * 3 + 5).toByte() }
         val bytes = PacketCodec.buildAlert(
-            issuer = issuer, authorityKey = key,
+            issuer = issuer,
             category = PacketCodec.ALERT_EXTREME, phraseCode = 2, // "MOVE TO HIGH GROUND"
             deltaLat = 1200, deltaLon = -800,
             radiusMeters = 800, issuedAtMinutes = 40_000, validForMinutes = 360,
@@ -28,7 +27,7 @@ class AlertPacketTest {
         assertTrue(PacketCodec.isAlert(bytes))
         assertFalse(PacketCodec.isResolve(bytes))
 
-        assertTrue(PacketCodec.verifyAuthWithKey(bytes, key))
+        assertTrue(PacketCodec.verifyAuth(bytes, issuer))
         assertFalse(PacketCodec.verifyAuthWithKey(bytes, ByteArray(16)))
 
         val a = PacketCodec.decodeAlert(bytes)
@@ -45,9 +44,9 @@ class AlertPacketTest {
 
     @Test
     fun `two alerts differing only in phrase have different content ids`() {
-        val issuer = id(2); val key = ByteArray(16) { 7 }
+        val issuer = id(2)
         fun mk(phrase: Int) = PacketCodec.buildAlert(
-            issuer, key, PacketCodec.ALERT_WARNING, phrase,
+            issuer, PacketCodec.ALERT_WARNING, phrase,
             0, 0, 500, 40_000, 120, 8,
         )
         assertNotEquals(

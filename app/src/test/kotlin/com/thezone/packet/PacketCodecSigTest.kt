@@ -105,7 +105,6 @@ class PacketCodecSigTest {
     fun `decodeSigFragment returns null for a non-SIG packet`() {
         val resolve = PacketCodec.buildResolve(
             resolver = DeviceIdentity(ByteArray(DeviceIdentity.KEY_BYTES) { it.toByte() }),
-            responderKey = ByteArray(16) { 7 },
             resolvedContentId = contentId32(),
             deltaLat = Packet.NO_FIX, deltaLon = Packet.NO_FIX,
             batteryLevel = 10, timestampMinutes = 0, nextExpectedTxSeconds = 10,

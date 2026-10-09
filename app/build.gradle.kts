@@ -23,8 +23,8 @@ android {
         applicationId = "com.thezone"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.4.10"
+        versionCode = 15
+        versionName = "0.5.0"
     }
 
     signingConfigs {

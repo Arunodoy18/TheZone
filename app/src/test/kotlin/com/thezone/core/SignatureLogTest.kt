@@ -31,7 +31,6 @@ class SignatureLogTest {
     // is what SignatureLog actually keys signing on.
     private fun resolvePacket(): ByteArray = PacketCodec.buildResolve(
         resolver = DeviceIdentity(ByteArray(DeviceIdentity.KEY_BYTES) { 9 }),
-        responderKey = ByteArray(16) { 1 },
         resolvedContentId = ByteArray(32) { it.toByte() },
         deltaLat = Packet.NO_FIX, deltaLon = Packet.NO_FIX,
         batteryLevel = 10, timestampMinutes = 5, nextExpectedTxSeconds = 10,

@@ -97,6 +97,7 @@ private fun Root() {
     var showDebug by remember { mutableStateOf(false) }
     var showBattery by remember { mutableStateOf(false) }
     var showContacts by remember { mutableStateOf(false) }
+    var showIssueAlert by remember { mutableStateOf(false) }
     var showBatteryNudge by rememberSaveable { mutableStateOf(!FirstRunStore.batteryPromptSeen(context)) }
     // shown on every cold start; survives rotation but not the task being cleared
     var showLanding by rememberSaveable { mutableStateOf(true) }
@@ -113,6 +114,11 @@ private fun Root() {
 
     if (showContacts) {
         EmergencyContactsScreen(onBack = { showContacts = false })
+        return
+    }
+
+    if (showIssueAlert) {
+        com.thezone.ui.IssueAlertSheet(onDismiss = { showIssueAlert = false })
         return
     }
 
@@ -182,6 +188,7 @@ private fun Root() {
                             showBattery = true
                         },
                         onContacts = { showSwitcher = false; showContacts = true },
+                        onIssueAlert = { showSwitcher = false; showIssueAlert = true },
                         onDismiss = { showSwitcher = false },
                     )
                 }
@@ -327,6 +334,7 @@ private fun ModeSwitcher(
     onDebug: () -> Unit,
     onBattery: () -> Unit,
     onContacts: () -> Unit,
+    onIssueAlert: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Box(
@@ -354,6 +362,8 @@ private fun ModeSwitcher(
                 ) { onPick(m) }
             }
             Spacer(Modifier.height(10.dp))
+            ZoneButton("⚠ Issue alert", filled = false) { onIssueAlert() }
+            Spacer(Modifier.height(6.dp))
             ZoneButton("Keep Zone alive (battery)", filled = false) { onBattery() }
             Spacer(Modifier.height(6.dp))
             ZoneButton("Text my status (SMS)", filled = false) { onContacts() }

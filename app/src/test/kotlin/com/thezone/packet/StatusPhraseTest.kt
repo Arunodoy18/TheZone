@@ -50,13 +50,13 @@ class StatusPhraseTest {
     fun `is not readable on a RESOLVE or ALERT packet (reserved means something else there)`() {
         val id = identity()
         val resolve = PacketCodec.buildResolve(
-            resolver = id, responderKey = ByteArray(16) { 1 }, resolvedContentId = ByteArray(32) { it.toByte() },
+            resolver = id, resolvedContentId = ByteArray(32) { it.toByte() },
             deltaLat = Packet.NO_FIX, deltaLon = Packet.NO_FIX, batteryLevel = 10, timestampMinutes = 5, nextExpectedTxSeconds = 10,
         )
         assertNull(PacketCodec.statusPhraseCode(resolve))
 
         val alert = PacketCodec.buildAlert(
-            issuer = id, authorityKey = ByteArray(16) { 1 }, category = PacketCodec.ALERT_WARNING, phraseCode = 1,
+            issuer = id, category = PacketCodec.ALERT_WARNING, phraseCode = 1,
             deltaLat = Packet.NO_FIX, deltaLon = Packet.NO_FIX, radiusMeters = 100, issuedAtMinutes = 10,
             validForMinutes = 60, batteryLevel = 10,
         )

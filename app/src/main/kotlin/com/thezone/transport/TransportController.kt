@@ -463,14 +463,13 @@ object TransportController {
     }
 
     /**
-     * A provisioned responder marks a heard device's latest report reached: build
-     * a RESOLVE, carry it, put it on air. Returns false if this phone has no
-     * responder key or the device isn't in the store.
+     * Any phone marks a heard device's latest report reached: build a RESOLVE,
+     * carry it, put it on air. No provisioning needed — see [canResolve].
+     * Returns false only if the device isn't in the store.
      */
     fun markResolved(context: Context, deviceIdHex: String): Boolean {
         val ctx = context.applicationContext
         appContext = ctx
-        val key = com.thezone.config.IncidentConfig.responderKey(ctx) ?: return false
         val t = transport ?: return false
         val target = store.all()
             .filter {
@@ -489,7 +488,6 @@ object TransportController {
 
         val bytes = PacketCodec.buildResolve(
             resolver = id,
-            responderKey = key,
             resolvedContentId = contentId,
             deltaLat = dLat,
             deltaLon = dLon,
@@ -510,13 +508,17 @@ object TransportController {
         return true
     }
 
-    /** Whether this phone can issue RESOLVEs / ALERTs (provisioned with the shared key). */
-    fun canResolve(context: Context): Boolean =
-        com.thezone.config.IncidentConfig.responderKey(context.applicationContext) != null
+    /**
+     * Whether this phone can issue RESOLVEs / ALERTs — always true. Any phone
+     * running the app can mark a device reached or raise an alert; there's no
+     * shared key to provision. Kept as a function (not inlined at call sites)
+     * in case a future pilot wants to reintroduce a gate here.
+     */
+    fun canResolve(context: Context): Boolean = true
 
     /**
-     * A provisioned authority phone issues an emergency alert: build a signed
-     * ALERT packet, carry it and put it on air. Returns false without the key.
+     * Any phone issues an emergency alert: build a self-signed ALERT packet,
+     * carry it and put it on air.
      */
     fun issueAlert(
         context: Context,
@@ -536,11 +538,10 @@ object TransportController {
     /**
      * Parse a CAP 1.2 XML alert — read from a file the user already has,
      * never fetched over a network (CLAUDE.md rule 4, see [com.thezone.cap.CapAlert])
-     * — and carry it into the mesh as a signed Zone ALERT, exactly as if it
-     * had been typed into IssueAlertSheet. Still needs this phone's
-     * provisioned responder/authority key: a CAP file doesn't bypass Zone's
-     * authenticity model, it just prefills the form. False on anything
-     * unparseable or without the key.
+     * — and carry it into the mesh as a self-signed Zone ALERT, exactly as if
+     * it had been typed into IssueAlertSheet. A CAP file just prefills the
+     * form; it doesn't need anything the phone isn't already able to do.
+     * False on anything unparseable.
      */
     fun issueFromCap(context: Context, capXml: String): Boolean {
         val fields = com.thezone.cap.CapAlert.parse(capXml) ?: return false
@@ -573,14 +574,13 @@ object TransportController {
         tag: String,
     ): Boolean {
         appContext = ctx
-        val key = com.thezone.config.IncidentConfig.responderKey(ctx) ?: return false
         val t = transport ?: return false
         val id = DeviceKeyStore.identity(ctx)
         val pct = HeartbeatSource.effectiveBatteryPercent(ctx)
         val now = System.currentTimeMillis()
 
         val bytes = PacketCodec.buildAlert(
-            issuer = id, authorityKey = key,
+            issuer = id,
             category = category, phraseCode = phraseCode,
             deltaLat = deltaLat, deltaLon = deltaLon,
             radiusMeters = radiusMeters,
@@ -734,35 +734,31 @@ object TransportController {
             dirty = true
         }
 
-        // RESOLVE (type 1): only honour it if it verifies against the shared
-        // responder key — a forged "reached" from a non-responder is ignored.
+        // RESOLVE (type 1): honoured from any phone — no shared key to verify
+        // against. Zero-config is the point: nobody provisions a key before the
+        // mesh is useful. auth is still a real self-signed MAC (attributable to
+        // the issuing device_id), just not checked against anything here.
         if (PacketCodec.isResolve(inbound.bytes)) {
-            val key = appContext?.let { com.thezone.config.IncidentConfig.responderKey(it) }
-            if (key != null && PacketCodec.verifyAuthWithKey(inbound.bytes, key)) {
-                PacketCodec.resolveTargetPrefix(inbound.bytes)?.let {
-                    if (resolveLog.add(it.toHex())) dirty = true
-                }
+            PacketCodec.resolveTargetPrefix(inbound.bytes)?.let {
+                if (resolveLog.add(it.toHex())) dirty = true
             }
         }
 
-        // ALERT (type 2): honour + raise a full-screen alert only if it verifies
-        // against the shared authority key. An unverifiable "alert" is ignored.
+        // ALERT (type 2): honoured + raised as a full-screen alert from any
+        // phone — same zero-config trust as RESOLVE above.
         if (PacketCodec.isAlert(inbound.bytes)) {
-            val key = appContext?.let { com.thezone.config.IncidentConfig.responderKey(it) }
-            if (key != null && PacketCodec.verifyAuthWithKey(inbound.bytes, key)) {
-                val rec = alertRecordFrom(inbound.bytes, inbound.receivedAtMillis)
-                if (alertLog.add(rec)) {
-                    dirty = true
-                    if (rec.issuerHex != store.ownDeviceIdHex) {
-                        appContext?.let {
-                            com.thezone.notify.AlertNotifier.show(it, rec)
-                            // Every relaying phone becomes its own siren + BT
-                            // name beacon too — the physical warning spreads
-                            // hop by hop the same way the packet does.
-                            if (rec.category >= PacketCodec.ALERT_WARNING) {
-                                com.thezone.notify.SirenBeacon.start(it, rec)
-                                com.thezone.notify.BluetoothNameBeacon.start(it, rec)
-                            }
+            val rec = alertRecordFrom(inbound.bytes, inbound.receivedAtMillis)
+            if (alertLog.add(rec)) {
+                dirty = true
+                if (rec.issuerHex != store.ownDeviceIdHex) {
+                    appContext?.let {
+                        com.thezone.notify.AlertNotifier.show(it, rec)
+                        // Every relaying phone becomes its own siren + BT
+                        // name beacon too — the physical warning spreads
+                        // hop by hop the same way the packet does.
+                        if (rec.category >= PacketCodec.ALERT_WARNING) {
+                            com.thezone.notify.SirenBeacon.start(it, rec)
+                            com.thezone.notify.BluetoothNameBeacon.start(it, rec)
                         }
                     }
                 }
