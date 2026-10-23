@@ -42,7 +42,6 @@
   .bar nav a{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;text-decoration:none;color:var(--dim);
     padding:10px 10px;border-radius:8px}
   .bar nav a:hover{color:var(--bone)}
-  .bar nav a.live{color:var(--signal);border:1px solid var(--line-hi)}
   @media (max-width:520px){.bar nav a.hide-s{display:none}}
 
   /* ---------- hero ---------- */
@@ -75,17 +74,6 @@
   @keyframes blink{50%{opacity:.25}}
   .strip p{margin:0;font-size:14px;color:var(--dim)}
   .strip p b{color:var(--bone);font-weight:600}
-
-  /* ---------- two phases ---------- */
-  .phases{display:grid;gap:12px}
-  .phase{border:1px solid var(--line);border-radius:16px;background:var(--ink-soft);padding:20px}
-  .phase .tag{display:inline-block;font:700 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;padding:6px 9px;border-radius:6px;margin-bottom:12px}
-  .phase.p1 .tag{color:var(--amber);border:1px solid #6b5a2a}
-  .phase.p2{border-color:#1c5e54;background:linear-gradient(180deg,#0b1a19,var(--ink-soft) 60%)}
-  .phase.p2 .tag{color:var(--signal);border:1px solid #1c5e54}
-  .phase h3{font:700 19px/1.25 var(--sans);margin-bottom:8px}
-  .phase p{margin:0 0 14px;color:var(--dim);font-size:15px}
-  .phase .btn{min-height:48px;font-size:15px}
 
   /* ---------- roles: swipe on phone ---------- */
   .roles{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 calc(var(--gut) * -1);padding:2px var(--gut) 12px;
@@ -142,7 +130,6 @@
     .hero{padding-top:64px} .hero .sonar{right:-40px;width:560px;height:560px;top:-60px}
     .cta{flex-direction:row;flex-wrap:wrap;max-width:none}
     .cta .btn{min-width:250px}
-    .phases{grid-template-columns:1fr 1fr}
     .roles{margin:0;padding:2px 0 8px;overflow:visible;flex-wrap:nowrap}
     .role{flex:1 1 0}
     .swipe{display:none}
@@ -167,7 +154,6 @@
     <nav aria-label="Sections">
       <a class="hide-s" href="#how">How it works</a>
       <a class="hide-s" href="#limits">Limits</a>
-      <a class="live" href="/dashboard.html">Live map</a>
     </nav>
   </div>
 </header>
@@ -195,16 +181,8 @@
           <span class="t">Get the app<small>Android · 7 MB · free</small></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>
         </a>
-        <a class="btn" href="/dashboard.html">
-          <span class="t">Open the live map<small>online · satellite, quakes, fires, cameras</small></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
-        </a>
-        <a class="btn" href="/viewer.html">
-          <span class="t">Try the control-room view<small>runs in your browser · demo data</small></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 12h17M12 5v14"/></svg>
-        </a>
       </div>
-      <p class="note" id="installnote">Android: tap the downloaded file and allow “install from this source” once. The live map needs a connection. It is for a control room, not for the blackout itself.</p>
+      <p class="note" id="installnote">Android: tap the downloaded file and allow “install from this source” once.</p>
 
       <div class="strip" aria-label="Diagram: a phone that stops reporting">
         <div class="cap"><span>One phone · heartbeat</span><span>Missed 3 in a row</span></div>
@@ -216,31 +194,6 @@
       </div>
     </div>
   </div>
-
-  <section id="phases">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="eyebrow">Two halves of one product</div>
-        <h2>See it coming. Then keep seeing when it hits.</h2>
-      </div>
-      <div class="phases">
-        <div class="phase p1">
-          <span class="tag">Phase 1 · online</span>
-          <h3>Watch the world while the network is up</h3>
-          <p>A live map for a control room: satellite imagery, earthquakes, fires, disaster alerts and public traffic cameras, all from open data.</p>
-          <a class="btn" href="/dashboard.html"><span class="t">Open the live map</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></a>
-        </div>
-        <div class="phase p2">
-          <span class="tag">Phase 2 · offline · the product</span>
-          <h3>Keep the picture when everything else goes dark</h3>
-          <p>No towers, no internet, no servers. Phones relay 31-byte signals over Bluetooth and the map keeps building itself.</p>
-          <a class="btn primary" href="/zone.apk" download><span class="t">Get the app</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <section id="how">
     <div class="wrap">
@@ -307,7 +260,7 @@
       <div class="sec-head"><div class="eyebrow">Known limits</div><h2>Stated, not hidden</h2></div>
       <details>
         <summary>iPhone can’t join the mesh</summary>
-        <p>Apple restricts Bluetooth advertising, and browsers can only listen. A real deployment needs an entitlement or a cheap hardware beacon. Today it is Android only. The control-room view works anywhere.</p>
+        <p>Apple restricts Bluetooth advertising. A real deployment needs an entitlement or a cheap hardware beacon. Today it is Android only.</p>
       </details>
       <details>
         <summary>Bluetooth doesn’t pass through rubble well</summary>
@@ -327,15 +280,13 @@
   <div class="wrap">
     <footer>
       Source: <a href="https://github.com/Arunodoy18/TheZone">github.com/Arunodoy18/TheZone</a> ·
-      <a href="/install.html">Install card (QR, for the demo floor)</a><br>
-      The control-room view is read-only: a browser can listen over Bluetooth but not join the mesh, so field roles run in the app.
+      <a href="/install.html">Install card (QR, for the demo floor)</a>
     </footer>
   </div>
 </main>
 
 <div class="dock" id="dock">
   <a class="btn primary" id="get-dock" href="/zone.apk" download>Get the app</a>
-  <a class="btn ghost" href="/dashboard.html">Live map</a>
 </div>
 
 <script>
@@ -352,7 +303,7 @@
       b.onclick = function () { document.getElementById("limits").scrollIntoView({ behavior: "smooth" }); };
     });
     document.getElementById("installnote").textContent =
-      "On iPhone: Apple blocks the Bluetooth advertising this needs. Open the live map or the control-room view instead. Both work in Safari.";
+      "On iPhone: Apple blocks the Bluetooth advertising this needs. See the limits below.";
   }
 </script>
 </body>

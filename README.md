@@ -18,9 +18,7 @@ problem statements **PS2** (Ground-Zero Communication Blackout) and **PS5**
 **Live:**
 [site](https://zone-thezone.vercel.app/) ·
 [download the APK](https://zone-thezone.vercel.app/zone.apk) ·
-[install card (QR)](https://zone-thezone.vercel.app/install.html) ·
-[EOC viewer](https://zone-thezone.vercel.app/viewer.html) ·
-[EOC command dashboard](https://zone-thezone.vercel.app/dashboard.html)
+[install card (QR)](https://zone-thezone.vercel.app/install.html)
 
 ---
 
@@ -126,10 +124,10 @@ app/src/main/kotlin/com/thezone/
   config/       IncidentConfig (position origin, shared responder key) · LangStore
   persistence/  StatePersistence — crash-safe JSON snapshot of the store + collapses
   diagnostics/  CrashLog — on-device crash file, no analytics
-app/src/test/   135 JVM unit tests (no Android deps in core/, packet/, or identity/)
-pwa/            offline landing page + browser EOC viewer + online command dashboard + staged zone.apk  (Vercel: outputDirectory = pwa, see vercel.json)
+app/src/test/   JVM unit tests (no Android deps in core/, packet/, or identity/)
+pwa/            landing page + staged zone.apk + install card  (Vercel: outputDirectory = pwa, see vercel.json)
 docs/           specs, build plan, field checklist, explainer
-scripts/        deploy / release / eoc-watch / pdf helpers
+scripts/        deploy / release / pdf helpers
 .github/        CI — unit tests + assembleDebug on push
 ```
 
@@ -164,8 +162,8 @@ incident origin, inferred `TRAPPED` from sustained immobility, a real app
 identity + icon, Sybil-resistant scoring, an on-device crash log, a "Keep Zone
 alive" battery-setup screen, a pre-shared responder key (verifiable `RESPONDER`
 packets, no crypto library), a `RESOLVE` packet type (mesh-wide "reached"),
-hot/cold Dig Here, an optional headcount, continuous live-EOC auto-export + an
-auto-refreshing viewer, a sneakernet mesh-state file, the Citizen screen in
+hot/cold Dig Here, an optional headcount, continuous live-EOC auto-export,
+a sneakernet mesh-state file, the Citizen screen in
 Hindi/Nepali, and CI. Single-phone re-check on the Realme 7 (2026-09-04): GPS,
 battery ladder, responder key, no crashes. The mesh half re-runs on three phones.
 Outstanding: a 30-minute soak run and a range survey.

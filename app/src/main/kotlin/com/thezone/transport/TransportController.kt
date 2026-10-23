@@ -129,8 +129,8 @@ object TransportController {
 
     /**
      * A self-contained JSON snapshot of the EOC view — reports, cell losses,
-     * confidence — for the offline PWA viewer (pwa/eoc.html). Pre-computed;
-     * the viewer is purely presentational.
+     * confidence. Written to the app's external files dir for `adb pull` /
+     * sneakernet handoff; nothing in this repo reads it back.
      */
     fun exportEoc(): String {
         fun cell(c: com.thezone.core.GridCell) = """{"lat":${c.latIndex},"lon":${c.lonIndex}}"""
